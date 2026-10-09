@@ -62,9 +62,11 @@ private:
         BoardConfig::BOILER_TX_PORT, BoardConfig::BOILER_TX_PIN,
         BoardConfig::BOILER_TX_INVERTED } };
 
+    // On from boot: an OpenTherm master draws its line power from the slave side, so
+    // with this off the thermostat cannot send a single frame.
     LpcGpioOutput thermostatPower_{
         LPC_IOCON->PIO1_21, BoardConfig::THERMOSTAT_POWER_IOCON,
-        BoardConfig::THERMOSTAT_POWER_PORT, BoardConfig::THERMOSTAT_POWER_PIN, true };
+        BoardConfig::THERMOSTAT_POWER_PORT, BoardConfig::THERMOSTAT_POWER_PIN, true, true };
 
     LpcWatchdog watchdog_;
 };

@@ -71,12 +71,12 @@ bool LpcIsp::ReadLine(char* line, size_t cap, uint32_t timeoutMs)
         char c;
         if (port_.read(&c, 1, deadline - now) != 1)
             continue;
-        if (c == '\r')
-            continue;
-        if (c == '\n')
+        // CR ends a line too: the ROM's echo ends in a bare CR, so with echo on
+        // "Synchronized\r\n" comes back as "Synchronized\rOK\r\n".
+        if (c == '\r' || c == '\n')
         {
             if (n == 0)
-                continue;          // a bare CR LF is not a reply
+                continue;          // the LF of a CR LF, or an empty line
             line[n] = '\0';
             return true;
         }
