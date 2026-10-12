@@ -46,9 +46,11 @@ public:
 
     void Init();
 
-    /// A frame one of the module's lines received. Called from the module link's
-    /// task, so it only queues; a full queue drops the frame and counts it.
-    void OnLineFrame(OpenThermSide side, uint32_t frame);
+    /// A frame one of the module's lines received: decide where it goes and queue it.
+    /// Called from the module link's task, so it never blocks. Returns where the frame
+    /// is going, for the link's record; None when it goes nowhere, including a full
+    /// queue (counted) and a simulator (counted; they do not exist yet).
+    FrameRoute OnLineFrame(OpenThermSide side, uint32_t frame);
 
     /// Connect `master` to `slave` (Open leaves it unconnected). Whichever master had
     /// `slave` before is left open. Saved, so it survives a reboot.
@@ -61,9 +63,10 @@ private:
     static constexpr int TASK_STACK = 4096;
     static constexpr size_t MASTER_COUNT = 2;
 
-    struct LineFrame
+    /// A frame waiting to go out, on the line decided when it came in.
+    struct Outgoing
     {
-        OpenThermSide side;
+        OpenThermSide line;
         uint32_t frame;
     };
 
@@ -74,7 +77,7 @@ private:
     std::atomic<Slave> routes_[MASTER_COUNT] = { Slave::BoilerLine, Slave::Open };
 
     StaticQueue_t queueBuffer_;
-    uint8_t queueStorage_[QUEUE_LEN * sizeof(LineFrame)];
+    uint8_t queueStorage_[QUEUE_LEN * sizeof(Outgoing)];
     QueueHandle_t queue_ = nullptr;
 
     struct Counters
@@ -89,8 +92,7 @@ private:
     static size_t Index(Master master) { return static_cast<size_t>(master); }
 
     void TaskLoop();
-    void Forward(const LineFrame& f);
-    void SendOn(OpenThermSide side, uint32_t frame);
+    FrameRoute Decide(OpenThermSide receivedOn);
     void Load();
     void Store();
 

@@ -94,7 +94,7 @@ void RoutingManager::Init()
     strux.getCommandManager().Register(this, { &getCommand_, &setCommand_ });
     Load();
 
-    queue_ = xQueueCreateStatic(QUEUE_LEN, sizeof(LineFrame), queueStorage_, &queueBuffer_);
+    queue_ = xQueueCreateStatic(QUEUE_LEN, sizeof(Outgoing), queueStorage_, &queueBuffer_);
 
     // Above the module link's task: a forwarded frame is late the moment it waits, and
     // the thermostat on the other end gives its boiler 800 ms to answer, all included.
@@ -156,57 +156,63 @@ void RoutingManager::Connect(Master master, Slave slave)
 
 // ── Forwarding ───────────────────────────────────────────────
 
-void RoutingManager::OnLineFrame(OpenThermSide side, uint32_t frame)
+FrameRoute RoutingManager::OnLineFrame(OpenThermSide side, uint32_t frame)
 {
     if (queue_ == nullptr)
-        return;
-    const LineFrame f{ side, frame };
-    if (xQueueSend(queue_, &f, 0) != pdTRUE)
-        counters_.queueFull++;
-}
+        return FrameRoute::None;
 
-void RoutingManager::TaskLoop()
-{
-    for (;;)
+    const FrameRoute to = Decide(side);
+    if (to == FrameRoute::None)
+        return FrameRoute::None;
+
+    const Outgoing out{ to == FrameRoute::Boiler ? OpenThermSide::Boiler : OpenThermSide::Thermostat, frame };
+    if (xQueueSend(queue_, &out, 0) != pdTRUE)
     {
-        LineFrame f;
-        if (xQueueReceive(queue_, &f, portMAX_DELAY) == pdTRUE)
-            Forward(f);
+        counters_.queueFull++;
+        return FrameRoute::None;
     }
+    return to;
 }
 
-void RoutingManager::Forward(const LineFrame& f)
+FrameRoute RoutingManager::Decide(OpenThermSide receivedOn)
 {
-    switch (f.side)
+    switch (receivedOn)
     {
     case OpenThermSide::Thermostat:
         // The real thermostat asking: to whichever boiler it is connected to.
         switch (PartnerOf(Master::ThermostatLine))
         {
-        case Slave::Open:       break;
-        case Slave::BoilerLine: SendOn(OpenThermSide::Boiler, f.frame); break;
-        case Slave::BoilerSim:  counters_.toSimulator++; break;
+        case Slave::Open:       return FrameRoute::None;
+        case Slave::BoilerLine: return FrameRoute::Boiler;
+        case Slave::BoilerSim:  counters_.toSimulator++; return FrameRoute::None;
         }
         break;
 
     case OpenThermSide::Boiler:
         // The real boiler answering: back to whichever thermostat has it.
         if (PartnerOf(Master::ThermostatLine) == Slave::BoilerLine)
-            SendOn(OpenThermSide::Thermostat, f.frame);
-        else if (PartnerOf(Master::ThermostatSim) == Slave::BoilerLine)
+            return FrameRoute::Thermostat;
+        if (PartnerOf(Master::ThermostatSim) == Slave::BoilerLine)
             counters_.toSimulator++;
-        break;
+        return FrameRoute::None;
     }
+    return FrameRoute::None;
 }
 
-void RoutingManager::SendOn(OpenThermSide side, uint32_t frame)
+void RoutingManager::TaskLoop()
 {
-    switch (app_.getModuleLinkManager().Send(side, frame))
+    for (;;)
     {
-    case ModuleLinkManager::SendResult::Ok:     counters_.forwarded++; break;
-    case ModuleLinkManager::SendResult::Busy:   counters_.busy++; break;
-    case ModuleLinkManager::SendResult::NoLink:
-    case ModuleLinkManager::SendResult::Failed: counters_.failed++; break;
+        Outgoing out;
+        if (xQueueReceive(queue_, &out, portMAX_DELAY) != pdTRUE)
+            continue;
+        switch (app_.getModuleLinkManager().Forward(out.line, out.frame))
+        {
+        case ModuleLinkManager::SendResult::Ok:     counters_.forwarded++; break;
+        case ModuleLinkManager::SendResult::Busy:   counters_.busy++; break;
+        case ModuleLinkManager::SendResult::NoLink:
+        case ModuleLinkManager::SendResult::Failed: counters_.failed++; break;
+        }
     }
 }
 

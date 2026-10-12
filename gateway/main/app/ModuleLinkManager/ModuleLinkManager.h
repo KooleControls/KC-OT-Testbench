@@ -20,6 +20,14 @@ enum class OpenThermSide : uint8_t
     Boiler,       // faces the boiler; the module plays the thermostat on it
 };
 
+/// Where the testbench sent on a frame one of the lines received.
+enum class FrameRoute : uint8_t
+{
+    None,         // nowhere: its device is not connected to anything
+    Thermostat,   // out on the thermostat line
+    Boiler,       // out on the boiler line
+};
+
 /// One OpenTherm frame that crossed the module, in either direction.
 struct ModuleFrame
 {
@@ -28,7 +36,8 @@ struct ModuleFrame
     uint32_t      gatewayMs;   // this gateway's clock when it was recorded
     uint32_t      moduleMs;    // the module's clock when it collected it; 0 for a sent one
     OpenThermSide side;
-    bool          sent;        // true: this gateway put it on the line
+    bool          sent;        // true: put on the line by hand (`module send`)
+    FrameRoute    to;          // a received one: where it was forwarded
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -79,7 +88,12 @@ public:
     bool IsReady() const { return phase_.load() == ConnectionState::Phase::Ready; }
 
     /// Put one frame on a line. Blocks until the module has started it or refused.
+    /// Recorded as a frame of its own.
     SendResult Send(OpenThermSide side, uint32_t frame);
+
+    /// Send on a frame a line received. Not recorded again: the received frame's
+    /// record already says where it went.
+    SendResult Forward(OpenThermSide side, uint32_t frame);
 
     /// Run any command the module has, as its console line (`opentherm status`), and
     /// copy the reply's text into `reply`. False when no reply came; `refused` when the
@@ -157,7 +171,8 @@ private:
     void StreamBytes(const uint8_t* p, size_t n);
     void StreamRecord(const char* line);
     void FailPending();
-    void Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent);
+    void Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent, FrameRoute to);
+    SendResult SendOnLine(OpenThermSide side, uint32_t frame);
 
     /// Frame and send, under the UART lock. False when the lock is not to be had (an
     /// ISP session) or the UART would not take it.

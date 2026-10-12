@@ -246,11 +246,13 @@ function FrameRowView({ row }: { row: FrameRow }) {
     <tr className={`border-b last:border-0 ${row.dir === "tx" ? "bg-muted/40" : ""}`}>
       <Td className="text-muted-foreground font-mono">{(row.ms / 1000).toFixed(3)}</Td>
       <Td className="whitespace-nowrap">
-        {/* Who said it: off the line it is the device on that line; on it, the testbench. */}
+        {/* Who said it: off the line it is the device on that line, and a forwarded
+            one says where it went; on it by hand, the testbench. */}
         {row.dir === "rx" ? (
           <span className="flex items-center gap-2">
             <span className={`size-2.5 rounded-full ${look.dot}`} />
             <span className={look.text}>{look.title}</span>
+            {row.to && <span>→ {SIDES[row.to].title}</span>}
           </span>
         ) : (
           <span className="flex items-center gap-2">

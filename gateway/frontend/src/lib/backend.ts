@@ -1112,6 +1112,8 @@ export interface ModuleFrame {
   ms: number
   /** The module's clock when it collected the frame; rx only. */
   moduleMs?: number
+  /** A received frame the testbench forwarded: the line it went out on. */
+  to?: OpenThermSide
 }
 
 export interface ModuleFramesReply {

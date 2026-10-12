@@ -359,8 +359,9 @@ void ModuleLinkManager::StreamRecord(const char* line)
         counters_.badRecords++;
         return;
     }
-    Record(side, frame, ms, false);
-    app_.getRoutingManager().OnLineFrame(side, frame);
+    // Routed first, so the record says where it went.
+    const FrameRoute to = app_.getRoutingManager().OnLineFrame(side, frame);
+    Record(side, frame, ms, false, to);
 }
 
 bool ModuleLinkManager::WriteFrame(const uint8_t* frame, size_t len)
@@ -442,6 +443,19 @@ bool ModuleLinkManager::Request(const char* line, char* reply, size_t cap, uint3
 
 ModuleLinkManager::SendResult ModuleLinkManager::Send(OpenThermSide side, uint32_t frame)
 {
+    const SendResult r = SendOnLine(side, frame);
+    if (r == SendResult::Ok)
+        Record(side, frame, 0, true, FrameRoute::None);
+    return r;
+}
+
+ModuleLinkManager::SendResult ModuleLinkManager::Forward(OpenThermSide side, uint32_t frame)
+{
+    return SendOnLine(side, frame);
+}
+
+ModuleLinkManager::SendResult ModuleLinkManager::SendOnLine(OpenThermSide side, uint32_t frame)
+{
     if (!IsReady())
         return SendResult::NoLink;
 
@@ -456,10 +470,7 @@ ModuleLinkManager::SendResult ModuleLinkManager::Send(OpenThermSide side, uint32
         return SendResult::Failed;
 
     if (strstr(reply, "\"ok\":true") != nullptr)
-    {
-        Record(side, frame, 0, true);
         return SendResult::Ok;
-    }
     return strstr(reply, "busy") != nullptr ? SendResult::Busy : SendResult::Failed;
 }
 
@@ -473,7 +484,7 @@ bool ModuleLinkManager::Exec(const char* line, char* reply, size_t cap, bool& re
 
 // ── The ring ─────────────────────────────────────────────────
 
-void ModuleLinkManager::Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent)
+void ModuleLinkManager::Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent, FrameRoute to)
 {
     LOCK(ringMutex_);
     ModuleFrame& f = ring_[nextSeq_ % RING];
@@ -483,6 +494,7 @@ void ModuleLinkManager::Record(OpenThermSide side, uint32_t frame, uint32_t modu
     f.moduleMs = moduleMs;
     f.side = side;
     f.sent = sent;
+    f.to = to;
 }
 
 size_t ModuleLinkManager::ReadFrames(uint32_t after, ModuleFrame* out, size_t max,
@@ -631,6 +643,8 @@ CommandResult ModuleLinkManager::Cmd_Frames(CommandContext& ctx)
         o.field("ms", f.gatewayMs);
         if (!f.sent)
             o.field("moduleMs", f.moduleMs);
+        if (f.to != FrameRoute::None)
+            o.field("to", f.to == FrameRoute::Thermostat ? "thermostat" : "boiler");
     }
     return CommandResult::Ok;
 }
