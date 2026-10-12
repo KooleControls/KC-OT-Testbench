@@ -8,7 +8,14 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { useOpenThermFrames, type FrameRow } from "@/hooks/use-opentherm"
+import {
+  CONNECTED_WITHIN_MS,
+  formatMemberId,
+  summariseLine,
+  useNow,
+  useOpenThermFrames,
+  type FrameRow,
+} from "@/hooks/use-opentherm"
 import { errorMessage } from "@/hooks/use-led"
 import { backend, type ModuleLinkState, type OpenThermSide } from "@/lib/backend"
 import { MSG_TYPES, decodeFrame, encodeFrame } from "@/lib/opentherm"
@@ -24,9 +31,6 @@ import { MSG_TYPES, decodeFrame, encodeFrame } from "@/lib/opentherm"
  * At the bottom, a frame composer for the bench: build a frame from its parts and
  * put it on a line with `module send`.
  */
-
-/** A device that has said nothing for this long is shown as gone. */
-const CONNECTED_WITHIN_MS = 5000
 
 type TrafficFilter = "all" | OpenThermSide
 type TypeFilter = "all" | number
@@ -196,46 +200,16 @@ export default function OpenThermPage() {
   )
 }
 
-/** What the frames from one line say about the device on it. */
-interface DeviceSummary {
-  lastSeenAt?: number
-  otVersion?: string
-  memberId?: number
-}
-
-// The thermostat announces itself in what it writes (124 its OpenTherm version,
-// 2 its member id in the low byte); the boiler in what it answers (125, 3).
-const IDENTITY = {
-  thermostat: { msgType: 1, versionId: 124, configId: 2 },
-  boiler: { msgType: 4, versionId: 125, configId: 3 },
-} as const
-
-function summarise(rows: FrameRow[], side: OpenThermSide): DeviceSummary {
-  const identity = IDENTITY[side]
-  const summary: DeviceSummary = {}
-  for (const r of rows) {
-    if (r.side !== side || r.dir !== "rx") continue
-    summary.lastSeenAt ??= r.receivedAt
-    const d = r.decoded
-    if (d.msgType !== identity.msgType) continue
-    if (d.dataId === identity.versionId) summary.otVersion ??= (d.value / 256).toFixed(1)
-    if (d.dataId === identity.configId) summary.memberId ??= d.value & 0xff
-  }
-  return summary
-}
-
 function DeviceCard({ side, rows, now }: { side: OpenThermSide; rows: FrameRow[]; now: number }) {
   const look = SIDES[side]
-  const summary = useMemo(() => summarise(rows, side), [rows, side])
+  const summary = useMemo(() => summariseLine(rows, side), [rows, side])
   const silentMs = summary.lastSeenAt === undefined ? undefined : now - summary.lastSeenAt
   const connected = silentMs !== undefined && silentMs < CONNECTED_WITHIN_MS
 
   const details = [
     summary.otVersion ? `OT ${summary.otVersion}` : "OT version unknown",
     look.role,
-    summary.memberId === undefined
-      ? "member id unknown"
-      : `member id 0x${summary.memberId.toString(16).toUpperCase().padStart(2, "0")}`,
+    summary.memberId === undefined ? "member id unknown" : `member id ${formatMemberId(summary.memberId)}`,
   ]
 
   return (
@@ -443,16 +417,6 @@ function LiveIndicator({ paused, failed }: { paused: boolean; failed: boolean })
       {label}
     </span>
   )
-}
-
-/** The current time, refreshed every `intervalMs`, for "last seen" to count up. */
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(timer)
-  }, [intervalMs])
-  return now
 }
 
 const selectClass =

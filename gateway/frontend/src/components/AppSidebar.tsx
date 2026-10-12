@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import {
   ActivityIcon,
+  CableIcon,
   TerminalIcon,
   SquareTerminalIcon,
   SettingsIcon,
@@ -41,6 +42,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 // cheaper than finding it out by clicking.
 const navItems = [
   { title: "Frames", icon: ActivityIcon, page: "home" as const },
+  { title: "Connections", icon: CableIcon, page: "connections" as const },
   {
     title: "Console",
     hint: "Device logs (stdout)",

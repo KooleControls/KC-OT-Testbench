@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { backend, type ModuleFrame, type ModuleLinkState } from "@/lib/backend"
+import { backend, type ModuleFrame, type ModuleLinkState, type OpenThermSide } from "@/lib/backend"
 import { decodeFrame, type DecodedFrame } from "@/lib/opentherm"
 import { errorMessage } from "@/hooks/use-led"
 
@@ -120,4 +120,50 @@ export function useOpenThermFrames() {
   }, [])
 
   return { rows, missed, link, error, clear }
+}
+
+/** A device that has said nothing for this long is shown as gone. */
+export const CONNECTED_WITHIN_MS = 5000
+
+/** What the frames from one line say about the device on it. */
+export interface DeviceSummary {
+  lastSeenAt?: number
+  otVersion?: string
+  memberId?: number
+}
+
+// The thermostat announces itself in what it writes (124 its OpenTherm version,
+// 2 its member id in the low byte); the boiler in what it answers (125, 3).
+const IDENTITY = {
+  thermostat: { msgType: 1, versionId: 124, configId: 2 },
+  boiler: { msgType: 4, versionId: 125, configId: 3 },
+} as const
+
+/** Scan rows (newest first) for the latest word from the device on `side`. */
+export function summariseLine(rows: FrameRow[], side: OpenThermSide): DeviceSummary {
+  const identity = IDENTITY[side]
+  const summary: DeviceSummary = {}
+  for (const r of rows) {
+    if (r.side !== side || r.dir !== "rx") continue
+    summary.lastSeenAt ??= r.receivedAt
+    const d = r.decoded
+    if (d.msgType !== identity.msgType) continue
+    if (d.dataId === identity.versionId) summary.otVersion ??= (d.value / 256).toFixed(1)
+    if (d.dataId === identity.configId) summary.memberId ??= d.value & 0xff
+  }
+  return summary
+}
+
+export function formatMemberId(memberId: number): string {
+  return "0x" + memberId.toString(16).toUpperCase().padStart(2, "0")
+}
+
+/** The current time, refreshed every `intervalMs`, for "last seen" to count up. */
+export function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(timer)
+  }, [intervalMs])
+  return now
 }
