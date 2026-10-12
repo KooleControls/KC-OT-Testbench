@@ -30,13 +30,15 @@
 namespace DeviceDoc {
 
 inline constexpr const char* DESCRIPTION =
-    "Strux template device - an ESP32 reference firmware whose only feature is an "
-    "LED that mirrors the relay link.";
+    "KC-OT-Testbench gateway - a KC1245 with a PCB1246 OpenTherm module, for testing "
+    "OpenTherm by simulating a thermostat and a boiler (work in progress).";
 
 inline constexpr const char* INSTRUCTIONS =
-    "This is the Strux template firmware. It is a foundation for real products, so "
-    "the only product-specific thing on it is a demonstration: an LED that is lit "
-    "while the device is connected to its relay server and dark when it is not.\n"
+    "This is the KC-OT-Testbench gateway firmware, built on the Strux framework. It "
+    "drives a PCB1246 OpenTherm module and is meant to simulate a thermostat and a "
+    "boiler for testing OpenTherm; that simulation is still in progress. It also "
+    "keeps the Strux demonstration: an LED that is lit while the device is connected "
+    "to its relay server and dark when it is not.\n"
     "\n"
     "Discovering what it can do\n"
     "  Every command declares itself. `help` returns every command this firmware "
