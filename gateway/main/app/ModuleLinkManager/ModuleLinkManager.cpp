@@ -114,8 +114,8 @@ CommandEntry ModuleLinkManager::execCommand_{
 
 CommandEntry ModuleLinkManager::framesCommand_{
     "module frames", &InvokeCommand<&ModuleLinkManager::Cmd_Frames>,
-    "The OpenTherm frames that crossed the module, received and sent, from a ring of "
-    "the last 256. Poll with after=<last seq seen> to follow them.",
+    "The OpenTherm frames on the bench, from a ring of the last 256: who sent each "
+    "one (from) and who it went to (to). Poll with after=<last seq seen> to follow them.",
     { &afterArg, &maxArg }
 };
 
@@ -360,8 +360,9 @@ void ModuleLinkManager::StreamRecord(const char* line)
         return;
     }
     // Routed first, so the record says where it went.
-    const FrameRoute to = app_.getRoutingManager().OnLineFrame(side, frame);
-    Record(side, frame, ms, false, to);
+    const Endpoint from = DeviceOn(side);
+    const Endpoint to = app_.getRoutingManager().OnLineFrame(from, frame);
+    RecordFrame(from, to, frame, ms);
 }
 
 bool ModuleLinkManager::WriteFrame(const uint8_t* frame, size_t len)
@@ -445,7 +446,7 @@ ModuleLinkManager::SendResult ModuleLinkManager::Send(OpenThermSide side, uint32
 {
     const SendResult r = SendOnLine(side, frame);
     if (r == SendResult::Ok)
-        Record(side, frame, 0, true, FrameRoute::None);
+        RecordFrame(Endpoint::Testbench, DeviceOn(side), frame);
     return r;
 }
 
@@ -484,16 +485,15 @@ bool ModuleLinkManager::Exec(const char* line, char* reply, size_t cap, bool& re
 
 // ── The ring ─────────────────────────────────────────────────
 
-void ModuleLinkManager::Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent, FrameRoute to)
+void ModuleLinkManager::RecordFrame(Endpoint from, Endpoint to, uint32_t frame, uint32_t moduleMs)
 {
     LOCK(ringMutex_);
     ModuleFrame& f = ring_[nextSeq_ % RING];
     f.seq = nextSeq_++;
     f.frame = frame;
-    f.gatewayMs = NowMs();
+    f.testbenchMs = NowMs();
     f.moduleMs = moduleMs;
-    f.side = side;
-    f.sent = sent;
+    f.from = from;
     f.to = to;
 }
 
@@ -637,14 +637,13 @@ CommandResult ModuleLinkManager::Cmd_Frames(CommandContext& ctx)
         const ModuleFrame& f = frames[i];
         auto o = list.object();
         o.field("seq", f.seq);
-        o.field("side", SideName(f.side));
-        o.field("dir", f.sent ? "tx" : "rx");
+        o.field("from", EndpointName(f.from));
+        if (f.to != Endpoint::None)
+            o.field("to", EndpointName(f.to));
         o.field("frame", f.frame);
-        o.field("ms", f.gatewayMs);
-        if (!f.sent)
+        o.field("ms", f.testbenchMs);
+        if (f.from == Endpoint::Thermostat || f.from == Endpoint::Boiler)
             o.field("moduleMs", f.moduleMs);
-        if (f.to != FrameRoute::None)
-            o.field("to", f.to == FrameRoute::Thermostat ? "thermostat" : "boiler");
     }
     return CommandResult::Ok;
 }

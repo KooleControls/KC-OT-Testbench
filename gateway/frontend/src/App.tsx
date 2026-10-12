@@ -8,6 +8,7 @@ import SettingsPage from "@/pages/SettingsPage"
 import FirmwarePage from "@/pages/FirmwarePage"
 import OpenThermPage from "@/pages/OpenThermPage"
 import ConnectionsPage from "@/pages/ConnectionsPage"
+import SimulatorsPage from "@/pages/SimulatorsPage"
 import LoginPage from "@/pages/LoginPage"
 
 function PageContent({ page }: { page: Page }) {
@@ -16,6 +17,8 @@ function PageContent({ page }: { page: Page }) {
       return <OpenThermPage />
     case "connections":
       return <ConnectionsPage />
+    case "simulators":
+      return <SimulatorsPage />
     case "console":
       return <ConsolePage />
     case "commands":

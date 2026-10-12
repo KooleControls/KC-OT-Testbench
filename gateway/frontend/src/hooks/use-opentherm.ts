@@ -17,7 +17,7 @@ const PAGE = 64
 
 export interface FrameRow extends ModuleFrame {
   decoded: DecodedFrame
-  /** Since the previous frame on the same line, in ms; absent for the first one. */
+  /** Since the previous frame from the same sender, in ms; absent for the first one. */
   deltaMs?: number
   /** When the frame was on the line, in browser time (Date.now()). Estimated: the
    *  newest frame of a poll is taken to be from that moment, the others are placed
@@ -64,8 +64,8 @@ export function useOpenThermFrames() {
         const polledAt = Date.now()
         const newestMs = r.frames.length > 0 ? r.frames[r.frames.length - 1].ms : 0
         const fresh: FrameRow[] = r.frames.map((f) => {
-          const prev = previous.current[f.side]
-          previous.current[f.side] = f
+          const prev = previous.current[f.from]
+          previous.current[f.from] = f
           // The module's clock times line traffic exactly; the testbench's is all a
           // frame the testbench sent has, and it includes the UART both ways.
           let deltaMs: number | undefined
@@ -144,7 +144,7 @@ export function summariseLine(rows: FrameRow[], side: OpenThermSide): DeviceSumm
   const identity = IDENTITY[side]
   const summary: DeviceSummary = {}
   for (const r of rows) {
-    if (r.side !== side || r.dir !== "rx") continue
+    if (r.from !== side) continue
     summary.lastSeenAt ??= r.receivedAt
     const d = r.decoded
     if (d.msgType !== identity.msgType) continue

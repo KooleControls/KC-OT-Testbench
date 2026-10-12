@@ -2,10 +2,14 @@
 #include "StruxProvider.h"
 #include "SettingsManager.h"
 #include "CommandManager.h"
+#include "ModuleLinkManager.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include <cstring>
 
 namespace {
+
+uint32_t NowMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
 const char* MasterName(RoutingManager::Master master)
 {
@@ -26,6 +30,27 @@ const char* SlaveName(RoutingManager::Slave slave)
     case RoutingManager::Slave::BoilerSim:  return "boilerSim";
     }
     return "unknown";
+}
+
+Endpoint EndpointOf(RoutingManager::Master master)
+{
+    switch (master)
+    {
+    case RoutingManager::Master::ThermostatLine: return Endpoint::Thermostat;
+    case RoutingManager::Master::ThermostatSim:  return Endpoint::ThermostatSim;
+    }
+    return Endpoint::None;
+}
+
+Endpoint EndpointOf(RoutingManager::Slave slave)
+{
+    switch (slave)
+    {
+    case RoutingManager::Slave::Open:       return Endpoint::None;
+    case RoutingManager::Slave::BoilerLine: return Endpoint::Boiler;
+    case RoutingManager::Slave::BoilerSim:  return Endpoint::BoilerSim;
+    }
+    return Endpoint::None;
 }
 
 bool ParseMaster(const char* name, RoutingManager::Master& out)
@@ -64,15 +89,22 @@ constexpr CommandArg<const char*> slaveArg{
 CommandEntry RoutingManager::getCommand_{
     "route get", &InvokeCommand<&RoutingManager::Cmd_Get>,
     "Report which boiler each thermostat is connected to ('open' for none), and "
-    "counters of the frames forwarded between the module's lines since boot."
+    "counters of the frames delivered since boot."
 };
 
 CommandEntry RoutingManager::setCommand_{
     "route set", &InvokeCommand<&RoutingManager::Cmd_Set>,
     "Connect a thermostat to a boiler, or leave it open. A boiler has one thermostat at "
     "most, so whichever thermostat had it before is left open. Saved, so it survives a "
-    "reboot. Frames routed to a simulator are dropped until simulators exist.",
+    "reboot.",
     { &masterArg, &slaveArg }
+};
+
+CommandEntry RoutingManager::simStatusCommand_{
+    "sim status", &InvokeCommand<&RoutingManager::Cmd_SimStatus>,
+    "Report the two simulators: whether each is connected (running), to whom, and what "
+    "it has heard from the other end. Their behaviour is in the settings tsim.* and "
+    "bsim.*, which apply with the next frame."
 };
 
 RoutingManager::RoutingManager(AppProvider& app)
@@ -91,10 +123,12 @@ void RoutingManager::Init()
 
     StruxProvider& strux = app_.getStrux();
     strux.getSettingsManager().Register({ &thermostatRoute_, &thermostatSimRoute_ });
-    strux.getCommandManager().Register(this, { &getCommand_, &setCommand_ });
+    thermostatSim_.RegisterSettings(strux.getSettingsManager());
+    boilerSim_.RegisterSettings(strux.getSettingsManager());
+    strux.getCommandManager().Register(this, { &getCommand_, &setCommand_, &simStatusCommand_ });
     Load();
 
-    queue_ = xQueueCreateStatic(QUEUE_LEN, sizeof(Outgoing), queueStorage_, &queueBuffer_);
+    queue_ = xQueueCreateStatic(QUEUE_LEN, sizeof(Delivery), queueStorage_, &queueBuffer_);
 
     // Above the module link's task: a forwarded frame is late the moment it waits, and
     // the thermostat on the other end gives its boiler 800 ms to answer, all included.
@@ -154,66 +188,102 @@ void RoutingManager::Connect(Master master, Slave slave)
     ESP_LOGI(TAG, "%s -> %s", MasterName(master), SlaveName(slave));
 }
 
-// ── Forwarding ───────────────────────────────────────────────
+// ── Delivery ─────────────────────────────────────────────────
 
-FrameRoute RoutingManager::OnLineFrame(OpenThermSide side, uint32_t frame)
+Endpoint RoutingManager::Destination(Endpoint from) const
 {
-    if (queue_ == nullptr)
-        return FrameRoute::None;
-
-    const FrameRoute to = Decide(side);
-    if (to == FrameRoute::None)
-        return FrameRoute::None;
-
-    const Outgoing out{ to == FrameRoute::Boiler ? OpenThermSide::Boiler : OpenThermSide::Thermostat, frame };
-    if (xQueueSend(queue_, &out, 0) != pdTRUE)
+    switch (from)
     {
-        counters_.queueFull++;
-        return FrameRoute::None;
+    case Endpoint::Thermostat:    return EndpointOf(PartnerOf(Master::ThermostatLine));
+    case Endpoint::ThermostatSim: return EndpointOf(PartnerOf(Master::ThermostatSim));
+    case Endpoint::Boiler:
+    case Endpoint::BoilerSim: {
+        // A boiler answers whichever thermostat chose it.
+        const Slave self = from == Endpoint::Boiler ? Slave::BoilerLine : Slave::BoilerSim;
+        for (Master m : MASTERS)
+            if (PartnerOf(m) == self)
+                return EndpointOf(m);
+        return Endpoint::None;
     }
-    return to;
+    case Endpoint::None:
+    case Endpoint::Testbench:
+        break;
+    }
+    return Endpoint::None;
 }
 
-FrameRoute RoutingManager::Decide(OpenThermSide receivedOn)
+Endpoint RoutingManager::OnLineFrame(Endpoint from, uint32_t frame)
 {
-    switch (receivedOn)
-    {
-    case OpenThermSide::Thermostat:
-        // The real thermostat asking: to whichever boiler it is connected to.
-        switch (PartnerOf(Master::ThermostatLine))
-        {
-        case Slave::Open:       return FrameRoute::None;
-        case Slave::BoilerLine: return FrameRoute::Boiler;
-        case Slave::BoilerSim:  counters_.toSimulator++; return FrameRoute::None;
-        }
-        break;
+    if (queue_ == nullptr)
+        return Endpoint::None;
 
-    case OpenThermSide::Boiler:
-        // The real boiler answering: back to whichever thermostat has it.
-        if (PartnerOf(Master::ThermostatLine) == Slave::BoilerLine)
-            return FrameRoute::Thermostat;
-        if (PartnerOf(Master::ThermostatSim) == Slave::BoilerLine)
-            counters_.toSimulator++;
-        return FrameRoute::None;
+    const Endpoint to = Destination(from);
+    if (to == Endpoint::None)
+        return Endpoint::None;
+
+    const Delivery d{ to, frame };
+    if (xQueueSend(queue_, &d, 0) != pdTRUE)
+    {
+        counters_.queueFull++;
+        return Endpoint::None;
     }
-    return FrameRoute::None;
+    return to;
 }
 
 void RoutingManager::TaskLoop()
 {
     for (;;)
     {
-        Outgoing out;
-        if (xQueueReceive(queue_, &out, portMAX_DELAY) != pdTRUE)
-            continue;
-        switch (app_.getModuleLinkManager().Forward(out.line, out.frame))
+        // A short wait, so the thermostat simulator keeps its interval to within it.
+        Delivery d;
+        if (xQueueReceive(queue_, &d, pdMS_TO_TICKS(IDLE_WAIT_MS)) == pdTRUE)
+            Deliver(d);
+
+        const uint32_t now = NowMs();
+        if (PartnerOf(Master::ThermostatSim) != Slave::Open && thermostatSim_.Due(now))
+            Emit(Endpoint::ThermostatSim, thermostatSim_.NextRequest(now));
+    }
+}
+
+void RoutingManager::Deliver(const Delivery& d)
+{
+    switch (d.to)
+    {
+    case Endpoint::Thermostat:
+    case Endpoint::Boiler: {
+        const OpenThermSide line = d.to == Endpoint::Thermostat ? OpenThermSide::Thermostat : OpenThermSide::Boiler;
+        switch (app_.getModuleLinkManager().Forward(line, d.frame))
         {
         case ModuleLinkManager::SendResult::Ok:     counters_.forwarded++; break;
         case ModuleLinkManager::SendResult::Busy:   counters_.busy++; break;
         case ModuleLinkManager::SendResult::NoLink:
         case ModuleLinkManager::SendResult::Failed: counters_.failed++; break;
         }
+        break;
     }
+
+    case Endpoint::BoilerSim:
+        counters_.simulated++;
+        Emit(Endpoint::BoilerSim, boilerSim_.Answer(d.frame, NowMs()));
+        break;
+
+    case Endpoint::ThermostatSim:
+        counters_.simulated++;
+        thermostatSim_.OnResponse(d.frame, NowMs());
+        break;
+
+    case Endpoint::None:
+    case Endpoint::Testbench:
+        break;
+    }
+}
+
+void RoutingManager::Emit(Endpoint from, uint32_t frame)
+{
+    const Endpoint to = Destination(from);
+    app_.getModuleLinkManager().RecordFrame(from, to, frame);
+    if (to != Endpoint::None)
+        Deliver(Delivery{ to, frame });
 }
 
 // ── Commands ─────────────────────────────────────────────────
@@ -227,10 +297,10 @@ void RoutingManager::WriteState(CommandContext& ctx)
 
     auto c = resp.object("counters");
     c.field("forwarded", counters_.forwarded.load());
+    c.field("simulated", counters_.simulated.load());
     c.field("queueFull", counters_.queueFull.load());
     c.field("busy", counters_.busy.load());
     c.field("failed", counters_.failed.load());
-    c.field("toSimulator", counters_.toSimulator.load());
 }
 
 CommandResult RoutingManager::Cmd_Get(CommandContext& ctx)
@@ -255,5 +325,28 @@ CommandResult RoutingManager::Cmd_Set(CommandContext& ctx)
 
     Connect(master, slave);
     WriteState(ctx);
+    return CommandResult::Ok;
+}
+
+CommandResult RoutingManager::Cmd_SimStatus(CommandContext& ctx)
+{
+    const uint32_t now = NowMs();
+    auto resp = ctx.reply.object();
+    {
+        const Endpoint partner = Destination(Endpoint::ThermostatSim);
+        auto o = resp.object("thermostatSim");
+        o.field("running", partner != Endpoint::None);
+        if (partner != Endpoint::None)
+            o.field("partner", EndpointName(partner));
+        thermostatSim_.Report(o, now);
+    }
+    {
+        const Endpoint partner = Destination(Endpoint::BoilerSim);
+        auto o = resp.object("boilerSim");
+        o.field("running", partner != Endpoint::None);
+        if (partner != Endpoint::None)
+            o.field("partner", EndpointName(partner));
+        boilerSim_.Report(o, now);
+    }
     return CommandResult::Ok;
 }

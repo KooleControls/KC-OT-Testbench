@@ -116,8 +116,12 @@ export default function ConnectionsPage() {
   const status: Record<Endpoint, NodeStatus> = {
     thermostat: lineStatus(lines.thermostat, now),
     boiler: lineStatus(lines.boiler, now),
-    thermostatSim: { state: "later" },
-    boilerSim: { state: "later" },
+    // A simulator runs exactly when it is connected to something.
+    thermostatSim: { state: "sim", running: state !== null && state.thermostatSim !== "open" },
+    boilerSim: {
+      state: "sim",
+      running: state !== null && (state.thermostat === "boilerSim" || state.thermostatSim === "boilerSim"),
+    },
   }
 
   return (
@@ -140,8 +144,8 @@ export default function ConnectionsPage() {
 
       <p className="text-muted-foreground text-sm">
         Click a line in the testbench to connect that thermostat and boiler, click a connected
-        line to open it again. The testbench saves the choice. The simulators do not exist
-        yet: frames routed to one are dropped.
+        line to open it again. The testbench saves the choice. A simulator runs while it is
+        connected; what it does is set on the Simulators page.
       </p>
     </div>
   )
@@ -149,7 +153,7 @@ export default function ConnectionsPage() {
 
 // ── Status of the ends ──────────────────────────────────────────
 
-type NodeStatus = { state: "connected" | "silent"; details: string } | { state: "later" }
+type NodeStatus = { state: "connected" | "silent"; details: string } | { state: "sim"; running: boolean }
 
 function lineStatus(summary: DeviceSummary, now: number): NodeStatus {
   const heard = summary.lastSeenAt !== undefined && now - summary.lastSeenAt < CONNECTED_WITHIN_MS
@@ -412,7 +416,15 @@ function Node({
 }
 
 function StatusLine({ status }: { status: NodeStatus }) {
-  if (status.state === "later") return <div className="text-muted-foreground mt-1 text-sm">Coming later</div>
+  if (status.state === "sim")
+    return (
+      <div className="mt-1 flex items-center gap-1.5 text-sm">
+        <span className={`size-2 rounded-full ${status.running ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+        <span className={status.running ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>
+          {status.running ? "Running" : "Not connected"}
+        </span>
+      </div>
+    )
   const connected = status.state === "connected"
   return (
     <div className="mt-1 text-sm">

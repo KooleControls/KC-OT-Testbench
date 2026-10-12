@@ -17,7 +17,7 @@ import {
   type FrameRow,
 } from "@/hooks/use-opentherm"
 import { errorMessage } from "@/hooks/use-led"
-import { backend, type ModuleLinkState, type OpenThermSide } from "@/lib/backend"
+import { backend, type FrameEndpoint, type ModuleLinkState, type OpenThermSide } from "@/lib/backend"
 import { MSG_TYPES, decodeFrame, encodeFrame } from "@/lib/opentherm"
 
 /**
@@ -34,6 +34,22 @@ import { MSG_TYPES, decodeFrame, encodeFrame } from "@/lib/opentherm"
 
 type TrafficFilter = "all" | OpenThermSide
 type TypeFilter = "all" | number
+
+/** How each sender is shown in the table. The simulators in the lighter shade. */
+const SENDERS: Record<FrameEndpoint, { title: string; dot: string; text: string }> = {
+  thermostat: { title: "Thermostat", dot: "bg-blue-500", text: "text-blue-600 dark:text-blue-400" },
+  thermostatSim: { title: "Thermostat simulator", dot: "bg-blue-300", text: "text-blue-600 dark:text-blue-400" },
+  boiler: { title: "Boiler", dot: "bg-orange-500", text: "" },
+  boilerSim: { title: "Boiler simulator", dot: "bg-orange-300", text: "" },
+  testbench: { title: "Testbench", dot: "bg-muted-foreground", text: "" },
+}
+
+/** Which side of the conversation sent a frame: a thermostat asks, a boiler answers. */
+function senderSide(from: FrameEndpoint): OpenThermSide | null {
+  if (from === "thermostat" || from === "thermostatSim") return "thermostat"
+  if (from === "boiler" || from === "boilerSim") return "boiler"
+  return null
+}
 
 const SIDES = {
   thermostat: {
@@ -70,7 +86,7 @@ export default function OpenThermPage() {
     () =>
       shown.filter(
         (r) =>
-          (traffic === "all" || r.side === traffic) &&
+          (traffic === "all" || senderSide(r.from) === traffic) &&
           (msgType === "all" || r.decoded.msgType === msgType),
       ),
     [shown, traffic, msgType],
@@ -241,25 +257,17 @@ function DeviceCard({ side, rows, now }: { side: OpenThermSide; rows: FrameRow[]
 
 function FrameRowView({ row }: { row: FrameRow }) {
   const d = row.decoded
-  const look = SIDES[row.side]
+  const sender = SENDERS[row.from]
   return (
-    <tr className={`border-b last:border-0 ${row.dir === "tx" ? "bg-muted/40" : ""}`}>
+    <tr className={`border-b last:border-0 ${row.from === "testbench" ? "bg-muted/40" : ""}`}>
       <Td className="text-muted-foreground font-mono">{(row.ms / 1000).toFixed(3)}</Td>
       <Td className="whitespace-nowrap">
-        {/* Who said it: off the line it is the device on that line, and a forwarded
-            one says where it went; on it by hand, the testbench. */}
-        {row.dir === "rx" ? (
-          <span className="flex items-center gap-2">
-            <span className={`size-2.5 rounded-full ${look.dot}`} />
-            <span className={look.text}>{look.title}</span>
-            {row.to && <span>→ {SIDES[row.to].title}</span>}
-          </span>
-        ) : (
-          <span className="flex items-center gap-2">
-            <span className="bg-muted-foreground size-2.5 rounded-full" />
-            Testbench → {look.title}
-          </span>
-        )}
+        {/* Who sent it, and who it went to; no arrow when it went nowhere. */}
+        <span className="flex items-center gap-2">
+          <span className={`size-2.5 rounded-full ${sender.dot}`} />
+          <span className={sender.text}>{sender.title}</span>
+          {row.to && <span>→ {SENDERS[row.to].title}</span>}
+        </span>
       </Td>
       <Td className="font-mono">
         {d.hex}

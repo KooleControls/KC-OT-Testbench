@@ -43,6 +43,8 @@ set(APP_SOURCES
     "app/ModuleFirmwareManager/ModuleFirmwareManager.cpp"
     "app/ModuleLinkManager/ModuleLinkManager.cpp"
     "app/RoutingManager/RoutingManager.cpp"
+    "app/Simulators/ThermostatSimulator.cpp"
+    "app/Simulators/BoilerSimulator.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -81,6 +83,7 @@ set(INCLUDE_DIRS_LIST
     "app/ModuleFirmwareManager"
     "app/ModuleLinkManager"
     "app/RoutingManager"
+    "app/Simulators"
 )
 
 set(COMPONENT_REQUIRES

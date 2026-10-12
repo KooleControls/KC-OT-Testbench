@@ -1,7 +1,7 @@
 // Singleton backend service — all communication over a single WebSocket.
 
 import { DEV_HOST } from "@/config"
-import type { Master, Slave } from "./routing"
+import type { Endpoint, Master, Slave } from "./routing"
 import { ReplyReader } from "./reply"
 import { ConsoleReplyReader, type ConsoleReply } from "./consoleReply"
 
@@ -762,6 +762,11 @@ class BackendService {
     return this.send<{ ok: boolean; error?: string }>("module send", { side, frame })
   }
 
+  /** Both simulators: running or not, and what they have heard. */
+  async getSimStatus(): Promise<SimStatus> {
+    return this.send<SimStatus>("sim status")
+  }
+
   /** Which boiler each thermostat is connected to, and the forwarding counters. */
   async getRouting(): Promise<RoutingState> {
     return this.send<RoutingState>("route get")
@@ -1096,24 +1101,67 @@ export interface RoutingState {
   error?: string
   thermostat: Slave | "open"
   thermostatSim: Slave | "open"
-  counters: { forwarded: number; queueFull: number; busy: number; failed: number; toSimulator: number }
+  counters: { forwarded: number; simulated: number; queueFull: number; busy: number; failed: number }
 }
 
-/** One frame that crossed the module. */
+/** Who sends or receives a frame on the bench. "testbench": put on a line by hand. */
+export type FrameEndpoint = Endpoint | "testbench"
+
+/** One OpenTherm frame on the bench, recorded once however many hops it took. */
 export interface ModuleFrame {
   /** The testbench's numbering: from 1, gap-free, restarting with the testbench. */
   seq: number
-  side: OpenThermSide
-  /** rx: off the line, from the thermostat or boiler. tx: put on the line by the testbench. */
-  dir: "rx" | "tx"
-  /** The 32 bits on the line, parity included. */
+  from: FrameEndpoint
+  /** Absent: it went nowhere. */
+  to?: FrameEndpoint
+  /** The 32 bits, parity included. */
   frame: number
   /** The testbench's clock (ms since boot) when it recorded the frame. */
   ms: number
-  /** The module's clock when it collected the frame; rx only. */
+  /** The module's clock when a line received it; only for the real devices' frames. */
   moduleMs?: number
-  /** A received frame the testbench forwarded: the line it went out on. */
-  to?: OpenThermSide
+}
+
+/** `sim status`: what each simulator has heard; a value is absent until heard. */
+export interface SimStatus {
+  thermostatSim: {
+    running: boolean
+    partner?: Endpoint
+    requests: number
+    responses: number
+    unanswered: number
+    unknownIds: number
+    lastResponseAgoMs?: number
+    boiler: {
+      fault?: boolean
+      ch?: boolean
+      dhw?: boolean
+      flame?: boolean
+      waterTemp?: number
+      modulation?: number
+      memberId?: number
+      dhwPresent?: boolean
+      modulating?: boolean
+      otVersion?: number
+    }
+  }
+  boilerSim: {
+    running: boolean
+    partner?: Endpoint
+    requests: number
+    unknownIds: number
+    lastRequestAgoMs?: number
+    thermostat: {
+      ch?: boolean
+      dhw?: boolean
+      controlSetpoint?: number
+      roomSetpoint?: number
+      roomTemp?: number
+      maxModulation?: number
+      memberId?: number
+      otVersion?: number
+    }
+  }
 }
 
 export interface ModuleFramesReply {
