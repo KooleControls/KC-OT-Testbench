@@ -1,5 +1,6 @@
 #include "ModuleLinkManager.h"
 #include "ModuleFirmwareManager.h"
+#include "RoutingManager.h"
 #include "BoardContext.h"
 #include "StruxProvider.h"
 #include "CommandManager.h"
@@ -359,6 +360,7 @@ void ModuleLinkManager::StreamRecord(const char* line)
         return;
     }
     Record(side, frame, ms, false);
+    app_.getRoutingManager().OnLineFrame(side, frame);
 }
 
 bool ModuleLinkManager::WriteFrame(const uint8_t* frame, size_t len)

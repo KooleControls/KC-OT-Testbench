@@ -15,6 +15,7 @@ class StruxProvider;
 class LedManager;
 class ModuleFirmwareManager;
 class ModuleLinkManager;
+class RoutingManager;
 
 class AppProvider
 {
@@ -29,4 +30,5 @@ public:
     virtual LedManager& getLedManager() = 0;
     virtual ModuleFirmwareManager& getModuleFirmwareManager() = 0;
     virtual ModuleLinkManager& getModuleLinkManager() = 0;
+    virtual RoutingManager& getRoutingManager() = 0;
 };

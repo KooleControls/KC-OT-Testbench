@@ -42,6 +42,7 @@ set(APP_SOURCES
     "app/LedManager/LedManager.cpp"
     "app/ModuleFirmwareManager/ModuleFirmwareManager.cpp"
     "app/ModuleLinkManager/ModuleLinkManager.cpp"
+    "app/RoutingManager/RoutingManager.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -79,6 +80,7 @@ set(INCLUDE_DIRS_LIST
     "app/LedManager"
     "app/ModuleFirmwareManager"
     "app/ModuleLinkManager"
+    "app/RoutingManager"
 )
 
 set(COMPONENT_REQUIRES

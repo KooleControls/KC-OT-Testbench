@@ -1,6 +1,7 @@
 // Singleton backend service — all communication over a single WebSocket.
 
 import { DEV_HOST } from "@/config"
+import type { Master, Slave } from "./routing"
 import { ReplyReader } from "./reply"
 import { ConsoleReplyReader, type ConsoleReply } from "./consoleReply"
 
@@ -761,6 +762,17 @@ class BackendService {
     return this.send<{ ok: boolean; error?: string }>("module send", { side, frame })
   }
 
+  /** Which boiler each thermostat is connected to, and the forwarding counters. */
+  async getRouting(): Promise<RoutingState> {
+    return this.send<RoutingState>("route get")
+  }
+
+  /** Connect a thermostat to a boiler, or leave it open; whoever had that boiler is
+   *  left open. The device saves it. */
+  async setRoute(master: Master, slave: Slave | "open"): Promise<RoutingState> {
+    return this.send<RoutingState>("route set", { master, slave })
+  }
+
   /** Turns the link indication on or off. Omitted fields are left alone by the
    *  device, so `{}` is a no-op that still reports the current state. */
   async setLed(params: { enabled?: boolean }): Promise<LedState> {
@@ -1077,6 +1089,15 @@ export interface DeviceInfo {
 // ── The PCB1246 OpenTherm module (ModuleLinkManager) ─────────────────────────
 
 export type OpenThermSide = "thermostat" | "boiler"
+
+/** `route get` / `route set`: each thermostat's boiler, "open" for none. */
+export interface RoutingState {
+  ok: boolean
+  error?: string
+  thermostat: Slave | "open"
+  thermostatSim: Slave | "open"
+  counters: { forwarded: number; queueFull: number; busy: number; failed: number; toSimulator: number }
+}
 
 /** One frame that crossed the module. */
 export interface ModuleFrame {

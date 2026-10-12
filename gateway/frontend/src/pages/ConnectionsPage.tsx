@@ -1,5 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { CpuIcon, FlameIcon, InfoIcon, PlugIcon, ThermometerIcon } from "lucide-react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react"
+import { CpuIcon, FlameIcon, ThermometerIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Card } from "@/components/ui/card"
 import {
@@ -11,39 +12,73 @@ import {
   type DeviceSummary,
 } from "@/hooks/use-opentherm"
 import { useDeviceInfo } from "@/hooks/use-device-info"
-import {
-  DEFAULT_ROUTING,
-  MASTERS,
-  SLAVES,
-  connect,
-  type Master,
-  type Routing,
-  type Slave,
-} from "@/lib/routing"
+import { errorMessage } from "@/hooks/use-led"
+import { backend, type RoutingState } from "@/lib/backend"
+import { MASTERS, SLAVES, isMaster, type Endpoint, type Master, type Routing, type Slave } from "@/lib/routing"
 
 /**
- * Which thermostat talks to which boiler. The real thermostat and boiler are outside
- * the testbench, each on one line of its PCB1246 module; the simulators are inside it,
- * and so is the routing between all four. Every possible pairing is drawn as a line:
- * clicking one connects it, clicking a connected one opens it again.
- *
- * The firmware routes nothing yet and has no simulators, so this page is the layout
- * only: a choice lives in this tab's state and is not sent to the device. The real
- * devices' status is live, read from the frames like on the Frames page.
+ * Which thermostat talks to which boiler. The four ends sit outside; the testbench is
+ * the box in the middle, and every pairing it can make is drawn inside it. Clicking a
+ * line connects that pair, clicking a connected one opens it again. The testbench
+ * forwards the frames (RoutingManager) and keeps the choice across reboots.
  */
 
 const BLUE = "var(--color-blue-500)"
 const ORANGE = "var(--color-orange-500)"
+const ROUTING_POLL_MS = 3000
 
-const TITLES: Record<Master | Slave, string> = {
-  thermostat: "Thermostat line",
-  thermostatSim: "Thermostat simulator",
-  boiler: "Boiler line",
-  boilerSim: "Boiler simulator",
+interface EndpointLook {
+  title: string
+  kind: "Real device" | "Simulator"
+  icon: ComponentType<{ className?: string }>
+  tint: string
+  color: string
+  iconColor: string
+}
+
+const LOOKS: Record<Endpoint, EndpointLook> = {
+  thermostat: {
+    title: "Thermostat",
+    kind: "Real device",
+    icon: ThermometerIcon,
+    tint: "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/30",
+    color: BLUE,
+    iconColor: "text-blue-500",
+  },
+  thermostatSim: {
+    title: "Thermostat simulator",
+    kind: "Simulator",
+    icon: CpuIcon,
+    tint: "border-dashed",
+    color: BLUE,
+    iconColor: "text-blue-500",
+  },
+  boiler: {
+    title: "Boiler",
+    kind: "Real device",
+    icon: FlameIcon,
+    tint: "border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/30",
+    color: ORANGE,
+    iconColor: "text-orange-500",
+  },
+  boilerSim: {
+    title: "Boiler simulator",
+    kind: "Simulator",
+    icon: CpuIcon,
+    tint: "border-dashed",
+    color: ORANGE,
+    iconColor: "text-orange-500",
+  },
+}
+
+function toRouting(state: RoutingState): Routing {
+  const slave = (s: Slave | "open") => (s === "open" ? null : s)
+  return { thermostat: slave(state.thermostat), thermostatSim: slave(state.thermostatSim) }
 }
 
 export default function ConnectionsPage() {
-  const [routing, setRouting] = useState<Routing>(DEFAULT_ROUTING)
+  const [state, setState] = useState<RoutingState | null>(null)
+  const [busy, setBusy] = useState(false)
   const { rows } = useOpenThermFrames()
   const info = useDeviceInfo()
   const now = useNow(1000)
@@ -52,47 +87,71 @@ export default function ConnectionsPage() {
     [rows],
   )
 
-  const toggle = (m: Master, s: Slave) => setRouting((r) => connect(r, m, r[m] === s ? null : s))
+  const refresh = useCallback(() => {
+    backend.getRouting().then(setState).catch(() => {
+      /* the frame poll and the sidebar report the connection */
+    })
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    const timer = setInterval(refresh, ROUTING_POLL_MS)
+    return () => clearInterval(timer)
+  }, [refresh])
+
+  const toggle = (m: Master, s: Slave) => {
+    if (!state || busy) return
+    const connected = toRouting(state)[m] === s
+    setBusy(true)
+    backend
+      .setRoute(m, connected ? "open" : s)
+      .then((next) => {
+        if (next.ok) setState(next)
+        else toast.error("Not changed", { description: next.error })
+      })
+      .catch((e) => toast.error("Not changed", { description: errorMessage(e) }))
+      .finally(() => setBusy(false))
+  }
+
+  const status: Record<Endpoint, NodeStatus> = {
+    thermostat: lineStatus(lines.thermostat, now),
+    boiler: lineStatus(lines.boiler, now),
+    thermostatSim: { state: "later" },
+    boilerSim: { state: "later" },
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-3xl font-bold">Connections</h1>
-        <span className="rounded-md bg-amber-100 px-2.5 py-1 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          Preview
-        </span>
-      </div>
+      <h1 className="text-3xl font-bold">Connections</h1>
 
-      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/30">
-        <InfoIcon className="mt-0.5 size-4 shrink-0 text-amber-600" />
-        <p>
-          The testbench does not route frames yet and has no simulators. Choices on this page
-          show how the bench will be set up; they stay in this browser tab and change nothing
-          on the device. The thermostat and boiler status is live.
-        </p>
-      </div>
-
-      <Card className="p-6">
-        <Diagram
-          routing={routing}
-          onToggle={toggle}
-          benchName={info?.name ?? "Testbench"}
-          thermostat={lineStatus(lines.thermostat, now)}
-          boiler={lineStatus(lines.boiler, now)}
-        />
+      <Card className="p-6 pb-10">
+        {state ? (
+          <Diagram
+            routing={toRouting(state)}
+            onToggle={toggle}
+            status={status}
+            benchName={info?.name ?? "Testbench"}
+            forwarded={state.counters.forwarded}
+          />
+        ) : (
+          <p className="text-muted-foreground text-sm">Reading the routing from the testbench…</p>
+        )}
       </Card>
+
+      <p className="text-muted-foreground text-sm">
+        Click a line in the testbench to connect that thermostat and boiler, click a connected
+        line to open it again. The testbench saves the choice. The simulators do not exist
+        yet: frames routed to one are dropped.
+      </p>
     </div>
   )
 }
 
-// ── Status of the real devices ──────────────────────────────────
+// ── Status of the ends ──────────────────────────────────────────
 
-interface LineStatus {
-  heard: boolean
-  details: string
-}
+type NodeStatus = { state: "connected" | "silent"; details: string } | { state: "later" }
 
-function lineStatus(summary: DeviceSummary, now: number): LineStatus {
+function lineStatus(summary: DeviceSummary, now: number): NodeStatus {
   const heard = summary.lastSeenAt !== undefined && now - summary.lastSeenAt < CONNECTED_WITHIN_MS
   const details = [
     summary.otVersion && `OT ${summary.otVersion}`,
@@ -100,7 +159,7 @@ function lineStatus(summary: DeviceSummary, now: number): LineStatus {
   ]
     .filter(Boolean)
     .join(" · ")
-  return { heard, details: details || "Identity not seen yet" }
+  return { state: heard ? "connected" : "silent", details: details || "Identity not seen yet" }
 }
 
 // ── Diagram ─────────────────────────────────────────────────────
@@ -108,7 +167,7 @@ function lineStatus(summary: DeviceSummary, now: number): LineStatus {
 type Point = { x: number; y: number }
 type Ref = (el: HTMLElement | null) => void
 
-/// Where each registered element's centre is, relative to `container`. The wires are
+/// Where each registered element's centre is, relative to `container`. The lines are
 /// drawn between these, so they follow the layout instead of assuming one.
 function useAnchors() {
   const container = useRef<HTMLDivElement>(null)
@@ -129,8 +188,8 @@ function useAnchors() {
     setPoints((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next))
   }
 
-  // After every render, because a dot moves whenever text around it changes (the
-  // device name arriving, a status line) without the container changing size.
+  // After every render, because a dot moves whenever text around it changes (a status
+  // line) without the container changing size.
   useLayoutEffect(measure)
 
   useLayoutEffect(() => {
@@ -150,95 +209,107 @@ function useAnchors() {
   return { container, anchor, points }
 }
 
+// Masters on the left, slaves on the right, real devices on the top row.
+const PLACE: Record<Endpoint, string> = {
+  thermostat: "md:col-start-1 md:row-start-1",
+  thermostatSim: "md:col-start-1 md:row-start-2",
+  boiler: "md:col-start-3 md:row-start-1",
+  boilerSim: "md:col-start-3 md:row-start-2",
+}
+
 function Diagram({
   routing,
   onToggle,
+  status,
   benchName,
-  thermostat,
-  boiler,
+  forwarded,
 }: {
   routing: Routing
   onToggle: (m: Master, s: Slave) => void
+  status: Record<Endpoint, NodeStatus>
   benchName: string
-  thermostat: LineStatus
-  boiler: LineStatus
+  forwarded: number
 }) {
   const { container, anchor, points } = useAnchors()
-  const candidates = MASTERS.flatMap((m) => SLAVES.map((s) => ({ m, s, on: routing[m] === s })))
+  const pairs = MASTERS.flatMap((m) => SLAVES.map((s) => ({ m, s, on: routing[m] === s })))
+  const isConnected = (e: Endpoint) => (isMaster(e) ? routing[e] !== null : MASTERS.some((m) => routing[m] === e))
+  const ends: Endpoint[] = [...MASTERS, ...SLAVES]
 
   return (
     <div ref={container} className="relative">
-      <div className="grid gap-4 md:grid-cols-2 md:gap-x-16">
-        <RealDevice
-          title="Thermostat"
-          icon={ThermometerIcon}
-          color="blue"
-          status={thermostat}
-          plug={anchor("thermostat-device")}
-        />
-        <RealDevice
-          title="Boiler"
-          icon={FlameIcon}
-          color="orange"
-          status={boiler}
-          plug={anchor("boiler-device")}
-        />
-      </div>
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1fr)] md:grid-rows-2 md:gap-x-20 md:gap-y-0">
+        {ends.map((e) => (
+          <Node key={e} endpoint={e} status={status[e]} dot={anchor(`node-${e}`)} className={`md:my-4 ${PLACE[e]}`} />
+        ))}
 
-      {/* The testbench itself: everything inside this border is this device. */}
-      <div className="bg-muted/30 relative mt-12 rounded-2xl border-2 border-dashed px-6 pt-10 pb-6">
-        <span className="bg-card absolute -top-3.5 left-5 rounded-md border px-2.5 py-0.5 text-sm font-semibold">
-          {benchName}
-        </span>
-
-        <div className="grid gap-4 md:grid-cols-2 md:gap-x-40 md:gap-y-12">
-          <LinePort side="thermostat" plug={anchor("thermostat-line")} port={anchor("thermostat")} />
-          <LinePort side="boiler" plug={anchor("boiler-line")} port={anchor("boiler")} />
-          <Simulator title={TITLES.thermostatSim} color="blue" port={anchor("thermostatSim")} portSide="right" />
-          <Simulator title={TITLES.boilerSim} color="orange" port={anchor("boilerSim")} portSide="left" />
+        {/* The testbench: everything between its ports happens inside this device. */}
+        <div className="bg-muted/50 relative hidden rounded-xl border md:col-start-2 md:row-span-2 md:row-start-1 md:block">
+          {ends.map((e) => (
+            <span
+              key={e}
+              ref={anchor(`port-${e}`)}
+              className={`absolute size-2 -translate-y-1/2 ${isMaster(e) ? "left-0" : "right-0"} ${
+                e === "thermostat" || e === "boiler" ? "top-1/4" : "top-3/4"
+              }`}
+            />
+          ))}
+          <div className="absolute inset-x-0 -bottom-9 text-center text-xs leading-tight">
+            <div className="font-semibold">{benchName}</div>
+            <div className="text-muted-foreground">{forwarded} forwarded</div>
+          </div>
         </div>
-
-        <p className="text-muted-foreground mt-6 hidden text-center text-xs md:block">
-          Click a line to connect it, click a connected line to open it again.
-        </p>
       </div>
 
       <svg className="pointer-events-none absolute inset-0 hidden h-full w-full overflow-visible md:block">
-        {/* The cables from the real devices into the module: physical, always there. */}
-        <Cable from={points["thermostat-device"]} to={points["thermostat-line"]} color={BLUE} />
-        <Cable from={points["boiler-device"]} to={points["boiler-line"]} color={ORANGE} />
-
-        {candidates.map(({ m, s, on }) => (
+        {ends.map((e) => (
+          <Lead key={e} from={points[`node-${e}`]} to={points[`port-${e}`]} color={LOOKS[e].color} on={isConnected(e)} />
+        ))}
+        {pairs.map(({ m, s, on }) => (
           <Wire
             key={m + s}
             id={`wire-${m}-${s}`}
-            from={points[m]}
-            to={points[s]}
+            from={points[`port-${m}`]}
+            to={points[`port-${s}`]}
             on={on}
-            label={`${on ? "Disconnect" : "Connect"} ${TITLES[m]} and ${TITLES[s]}`}
+            label={`${on ? "Disconnect" : "Connect"} ${LOOKS[m].title.toLowerCase()} and ${LOOKS[s].title.toLowerCase()}`}
             onClick={() => onToggle(m, s)}
           />
         ))}
       </svg>
 
       <ul className="text-muted-foreground mt-4 text-sm md:hidden">
-        {MASTERS.map((m) => (
-          <li key={m}>
-            {TITLES[m]} → {routing[m] ? TITLES[routing[m]] : "open"}
-          </li>
-        ))}
+        {MASTERS.map((m) => {
+          const s = routing[m]
+          return (
+            <li key={m}>
+              {LOOKS[m].title} → {s ? LOOKS[s].title : "open"}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
 }
 
-function Cable({ from, to, color }: { from?: Point; to?: Point; color: string }) {
+/** From a device to its port on the testbench: coloured while it is connected. */
+function Lead({ from, to, color, on }: { from?: Point; to?: Point; color: string; on: boolean }) {
   if (!from || !to) return null
-  const midY = (from.y + to.y) / 2
-  const d = `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`
-  return <path d={d} fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" />
+  return on ? (
+    <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} strokeWidth={3} />
+  ) : (
+    <line
+      x1={from.x}
+      y1={from.y}
+      x2={to.x}
+      y2={to.y}
+      strokeWidth={2}
+      strokeDasharray="4 5"
+      className="stroke-muted-foreground/40"
+    />
+  )
 }
 
+/** One pairing inside the testbench; clickable. */
 function Wire({
   id,
   from,
@@ -283,14 +354,13 @@ function Wire({
         </linearGradient>
       </defs>
       {/* A wide invisible stroke, so the thin line is easy to hit. */}
-      <path d={d} fill="none" stroke="transparent" strokeWidth={18} />
+      <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
       {on ? (
         <path
           d={d}
           fill="none"
           stroke={`url(#${id})`}
-          strokeWidth={4}
-          strokeLinecap="round"
+          strokeWidth={3}
           className="group-hover:opacity-60 group-focus-visible:opacity-60"
         />
       ) : (
@@ -298,8 +368,8 @@ function Wire({
           d={d}
           fill="none"
           strokeWidth={2}
-          strokeDasharray="5 6"
-          className="stroke-muted-foreground/25 group-hover:stroke-muted-foreground/70 group-focus-visible:stroke-muted-foreground/70"
+          strokeDasharray="4 5"
+          className="stroke-muted-foreground/30 group-hover:stroke-muted-foreground/80 group-focus-visible:stroke-muted-foreground/80"
         />
       )}
     </g>
@@ -308,104 +378,51 @@ function Wire({
 
 // ── Nodes ───────────────────────────────────────────────────────
 
-const COLORS = {
-  blue: {
-    tint: "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/30",
-    icon: "text-blue-500",
-  },
-  orange: {
-    tint: "border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/30",
-    icon: "text-orange-500",
-  },
-} as const
-
-function RealDevice({
-  title,
-  icon: Icon,
-  color,
+function Node({
+  endpoint,
   status,
-  plug,
+  dot,
+  className,
 }: {
-  title: string
-  icon: ComponentType<{ className?: string }>
-  color: keyof typeof COLORS
-  status: LineStatus
-  plug: Ref
+  endpoint: Endpoint
+  status: NodeStatus
+  dot: Ref
+  className: string
 }) {
-  const c = COLORS[color]
+  const look = LOOKS[endpoint]
+  const dotSide = isMaster(endpoint) ? "-right-1.5" : "-left-1.5"
   return (
-    <div className={`relative flex items-center gap-4 rounded-xl border p-4 ${c.tint}`}>
-      <div className="bg-background flex size-14 shrink-0 items-center justify-center rounded-lg border shadow-sm">
-        <Icon className={`size-7 ${c.icon}`} />
+    <div className={`relative flex items-center gap-4 rounded-xl border p-4 ${look.tint} ${className}`}>
+      <div className="bg-background flex size-12 shrink-0 items-center justify-center rounded-lg border shadow-sm">
+        <look.icon className={`size-6 ${look.iconColor}`} />
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-semibold">{title}</span>
-          <span className="text-muted-foreground text-xs">Real device</span>
+          <span className="font-semibold">{look.title}</span>
+          <span className="text-muted-foreground text-xs">{look.kind}</span>
         </div>
-        <div className="mt-1 flex items-center gap-1.5 text-sm">
-          <span className={`size-2 rounded-full ${status.heard ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-          <span className={status.heard ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>
-            {status.heard ? "Connected" : "Not heard from"}
-          </span>
-        </div>
-        <div className="text-muted-foreground truncate text-sm">{status.details}</div>
+        <StatusLine status={status} />
       </div>
-      <Dot anchor={plug} className={`-bottom-1.5 left-1/2 -translate-x-1/2 ${c.icon}`} />
+      <span
+        ref={dot}
+        className={`bg-background absolute top-1/2 z-10 hidden size-3 -translate-y-1/2 rounded-full border-2 border-current md:block ${dotSide} ${look.iconColor}`}
+      />
     </div>
   )
 }
 
-function LinePort({ side, plug, port }: { side: "thermostat" | "boiler"; plug: Ref; port: Ref }) {
-  const c = COLORS[side === "thermostat" ? "blue" : "orange"]
-  const portSide = side === "thermostat" ? "-right-1.5" : "-left-1.5"
+function StatusLine({ status }: { status: NodeStatus }) {
+  if (status.state === "later") return <div className="text-muted-foreground mt-1 text-sm">Coming later</div>
+  const connected = status.state === "connected"
   return (
-    <NodeFrame className="bg-background">
-      <PlugIcon className={`size-5 shrink-0 ${c.icon}`} />
-      <div className="min-w-0">
-        <div className="font-medium">{TITLES[side]}</div>
-        <div className="text-muted-foreground text-xs">PCB1246 OpenTherm module</div>
-      </div>
-      <Dot anchor={plug} className={`-top-1.5 left-1/2 -translate-x-1/2 ${c.icon}`} />
-      <Dot anchor={port} className={`${portSide} top-1/2 -translate-y-1/2 ${c.icon}`} />
-    </NodeFrame>
-  )
-}
-
-function Simulator({
-  title,
-  color,
-  port,
-  portSide,
-}: {
-  title: string
-  color: keyof typeof COLORS
-  port: Ref
-  portSide: "left" | "right"
-}) {
-  const c = COLORS[color]
-  const portPosition = portSide === "right" ? "-right-1.5" : "-left-1.5"
-  return (
-    <NodeFrame className="bg-background border-dashed">
-      <CpuIcon className={`size-5 shrink-0 ${c.icon}`} />
-      <div className="min-w-0">
-        <div className="font-medium">{title}</div>
-        <div className="text-muted-foreground text-xs">Simulator · coming later</div>
-      </div>
-      <Dot anchor={port} className={`${portPosition} top-1/2 -translate-y-1/2 ${c.icon}`} />
-    </NodeFrame>
-  )
-}
-
-function NodeFrame({ className, children }: { className: string; children: ReactNode }) {
-  return <div className={`relative flex items-center gap-3 rounded-xl border px-4 py-3 ${className}`}>{children}</div>
-}
-
-function Dot({ anchor, className }: { anchor: Ref; className: string }) {
-  return (
-    <span
-      ref={anchor}
-      className={`bg-background absolute z-10 hidden size-3 rounded-full border-2 border-current md:block ${className}`}
-    />
+    <div className="mt-1 text-sm">
+      <span className="flex items-center gap-1.5">
+        <span className={`size-2 rounded-full ${connected ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+        <span className={connected ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>
+          {connected ? "Connected" : "Not heard from"}
+        </span>
+      </span>
+      <div className="text-muted-foreground truncate">{status.details}</div>
+    </div>
   )
 }

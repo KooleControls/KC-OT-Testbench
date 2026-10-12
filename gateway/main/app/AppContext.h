@@ -9,6 +9,7 @@
 #include "LedManager/LedManager.h"
 #include "ModuleFirmwareManager/ModuleFirmwareManager.h"
 #include "ModuleLinkManager/ModuleLinkManager.h"
+#include "RoutingManager/RoutingManager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
 //
@@ -49,6 +50,9 @@ public:
         // Starts checking the PCB1246 on a task of its own; nothing here waits for it.
         moduleFirmwareManager_.Init();
 
+        // Before the link: the link hands every frame a line receives to the router.
+        routingManager_.Init();
+
         // The link to the module's firmware. Waits out the check above on its own:
         // the two share the module's UART under ModuleFirmwareManager's lock.
         moduleLinkManager_.Init();
@@ -59,6 +63,7 @@ public:
     LedManager& getLedManager() override { return ledManager_; }
     ModuleFirmwareManager& getModuleFirmwareManager() override { return moduleFirmwareManager_; }
     ModuleLinkManager& getModuleLinkManager() override { return moduleLinkManager_; }
+    RoutingManager& getRoutingManager() override { return routingManager_; }
 
 private:
     BoardContext& board_;
@@ -67,4 +72,5 @@ private:
     LedManager ledManager_{*this};
     ModuleFirmwareManager moduleFirmwareManager_{*this};
     ModuleLinkManager moduleLinkManager_{*this};
+    RoutingManager routingManager_{*this};
 };
