@@ -30,11 +30,11 @@
 namespace DeviceDoc {
 
 inline constexpr const char* DESCRIPTION =
-    "KC-OT-Testbench gateway - a KC1245 with a PCB1246 OpenTherm module, for testing "
+    "KC-OT-Testbench - a KC1245 with a PCB1246 OpenTherm module, for testing "
     "OpenTherm by simulating a thermostat and a boiler (work in progress).";
 
 inline constexpr const char* INSTRUCTIONS =
-    "This is the KC-OT-Testbench gateway firmware, built on the Strux framework. It "
+    "This is the KC-OT-Testbench firmware, built on the Strux framework. It "
     "drives a PCB1246 OpenTherm module and is meant to simulate a thermostat and a "
     "boiler for testing OpenTherm; that simulation is still in progress. It also "
     "keeps the Strux demonstration: an LED that is lit while the device is connected "
@@ -65,7 +65,7 @@ inline constexpr const char* INSTRUCTIONS =
     "\n"
     "OpenTherm traffic\n"
     "  The module is a modem: it passes frames between its two lines and this "
-    "gateway, and decodes nothing. `module frames after=<seq>` returns the frames "
+    "testbench, and decodes nothing. `module frames after=<seq>` returns the frames "
     "that crossed it, received and sent, from a ring of the last 256 - poll it with "
     "the last seq seen (the OpenTherm page in the web UI does exactly that). "
     "`module send side=boiler frame=0x80190000` puts one frame on a line; a frame "

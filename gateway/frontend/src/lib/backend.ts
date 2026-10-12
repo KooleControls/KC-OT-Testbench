@@ -751,7 +751,7 @@ class BackendService {
     return this.send<ModuleFramesReply>("module frames", { after })
   }
 
-  /** The gateway's serial link to the module. */
+  /** The testbench's serial link to the module. */
   async getModuleLink(): Promise<ModuleLinkState> {
     return this.send<ModuleLinkState>("module link")
   }
@@ -1080,23 +1080,23 @@ export type OpenThermSide = "thermostat" | "boiler"
 
 /** One frame that crossed the module. */
 export interface ModuleFrame {
-  /** The gateway's numbering: from 1, gap-free, restarting with the gateway. */
+  /** The testbench's numbering: from 1, gap-free, restarting with the testbench. */
   seq: number
   side: OpenThermSide
-  /** rx: off the line, from the thermostat or boiler. tx: put on the line by the gateway. */
+  /** rx: off the line, from the thermostat or boiler. tx: put on the line by the testbench. */
   dir: "rx" | "tx"
   /** The 32 bits on the line, parity included. */
   frame: number
-  /** The gateway's clock (ms since boot) when it recorded the frame. */
+  /** The testbench's clock (ms since boot) when it recorded the frame. */
   ms: number
   /** The module's clock when it collected the frame; rx only. */
   moduleMs?: number
 }
 
 export interface ModuleFramesReply {
-  /** The newest seq the gateway holds. Below the cursor asked with: it restarted. */
+  /** The newest seq the testbench holds. Below the cursor asked with: it restarted. */
   latest: number
-  /** Frames after the cursor that had already left the gateway's ring. */
+  /** Frames after the cursor that had already left the testbench's ring. */
   missed: number
   /** Whether the link to the module is up right now. */
   link: boolean

@@ -4,7 +4,7 @@ import { decodeFrame, type DecodedFrame } from "@/lib/opentherm"
 import { errorMessage } from "@/hooks/use-led"
 
 // A thermostat talks about once a second and the boiler answers each time, so twice a
-// second keeps the table live without a backlog. The gateway holds the last 256
+// second keeps the table live without a backlog. The testbench holds the last 256
 // frames, which is minutes of traffic: a slow poll misses nothing, it only lags.
 const POLL_MS = 500
 const LINK_POLL_MS = 3000
@@ -12,7 +12,7 @@ const LINK_POLL_MS = 3000
 /** Rows kept in the browser, newest first. */
 const KEEP = 1000
 
-/** What the gateway sends back per request at most; a full page means ask again. */
+/** What the testbench sends back per request at most; a full page means ask again. */
 const PAGE = 64
 
 export interface FrameRow extends ModuleFrame {
@@ -21,7 +21,7 @@ export interface FrameRow extends ModuleFrame {
   deltaMs?: number
   /** When the frame was on the line, in browser time (Date.now()). Estimated: the
    *  newest frame of a poll is taken to be from that moment, the others are placed
-   *  before it by the gateway's own clock. */
+   *  before it by the testbench's own clock. */
   receivedAt: number
 }
 
@@ -53,7 +53,7 @@ export function useOpenThermFrames() {
         const r = await backend.getModuleFrames(cursor.current)
         if (!alive.current) return
 
-        // The gateway restarted: its numbering did too, and the frames this page
+        // The testbench restarted: its numbering did too, and the frames this page
         // holds are from before that. Keep them on screen, follow the new ones.
         if (r.latest < cursor.current) {
           cursor.current = 0
@@ -66,8 +66,8 @@ export function useOpenThermFrames() {
         const fresh: FrameRow[] = r.frames.map((f) => {
           const prev = previous.current[f.side]
           previous.current[f.side] = f
-          // The module's clock times line traffic exactly; the gateway's is all a
-          // frame the gateway sent has, and it includes the UART both ways.
+          // The module's clock times line traffic exactly; the testbench's is all a
+          // frame the testbench sent has, and it includes the UART both ways.
           let deltaMs: number | undefined
           if (prev)
             deltaMs =

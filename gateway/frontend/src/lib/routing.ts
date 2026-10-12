@@ -1,7 +1,7 @@
 // Who talks to whom on the bench. A master (a thermostat) is paired with at most one
 // slave (a boiler), and a slave with at most one master; either can be left open.
 // The real devices are the ones on the module's two lines, the simulators are to
-// live in the gateway.
+// live in the testbench.
 //
 // Only the masters' choices are stored: a slave's partner is whichever master chose
 // it, so the two sides can never disagree.

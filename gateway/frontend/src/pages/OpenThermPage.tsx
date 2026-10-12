@@ -24,9 +24,9 @@ import { MSG_TYPES, decodeFrame, encodeFrame } from "@/lib/opentherm"
  * The OpenTherm traffic through the PCB1246 module, as it happens.
  *
  * On top, one card per line saying who is on it, as far as the frames tell. Below
- * that, every frame either line receives and every frame the gateway puts on one,
+ * that, every frame either line receives and every frame the testbench puts on one,
  * newest first, decoded for reading. The decoding is this page's only: the modem
- * and the gateway pass frames through as numbers (lib/opentherm.ts).
+ * and the testbench pass frames through as numbers (lib/opentherm.ts).
  *
  * At the bottom, a frame composer for the bench: build a frame from its parts and
  * put it on a line with `module send`.
@@ -246,7 +246,7 @@ function FrameRowView({ row }: { row: FrameRow }) {
     <tr className={`border-b last:border-0 ${row.dir === "tx" ? "bg-muted/40" : ""}`}>
       <Td className="text-muted-foreground font-mono">{(row.ms / 1000).toFixed(3)}</Td>
       <Td className="whitespace-nowrap">
-        {/* Who said it: off the line it is the device on that line; on it, the gateway. */}
+        {/* Who said it: off the line it is the device on that line; on it, the testbench. */}
         {row.dir === "rx" ? (
           <span className="flex items-center gap-2">
             <span className={`size-2.5 rounded-full ${look.dot}`} />
@@ -255,7 +255,7 @@ function FrameRowView({ row }: { row: FrameRow }) {
         ) : (
           <span className="flex items-center gap-2">
             <span className="bg-muted-foreground size-2.5 rounded-full" />
-            Gateway → {look.title}
+            Testbench → {look.title}
           </span>
         )}
       </Td>
