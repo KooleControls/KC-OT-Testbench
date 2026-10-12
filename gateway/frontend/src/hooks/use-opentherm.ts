@@ -19,6 +19,10 @@ export interface FrameRow extends ModuleFrame {
   decoded: DecodedFrame
   /** Since the previous frame on the same line, in ms; absent for the first one. */
   deltaMs?: number
+  /** When the frame was on the line, in browser time (Date.now()). Estimated: the
+   *  newest frame of a poll is taken to be from that moment, the others are placed
+   *  before it by the gateway's own clock. */
+  receivedAt: number
 }
 
 /// Follow the frames crossing the PCB1246, by polling `module frames` with the last
@@ -57,6 +61,8 @@ export function useOpenThermFrames() {
           continue
         }
 
+        const polledAt = Date.now()
+        const newestMs = r.frames.length > 0 ? r.frames[r.frames.length - 1].ms : 0
         const fresh: FrameRow[] = r.frames.map((f) => {
           const prev = previous.current[f.side]
           previous.current[f.side] = f
@@ -68,7 +74,8 @@ export function useOpenThermFrames() {
               f.moduleMs !== undefined && prev.moduleMs !== undefined
                 ? f.moduleMs - prev.moduleMs
                 : f.ms - prev.ms
-          return { ...f, decoded: decodeFrame(f.frame), deltaMs }
+          const receivedAt = polledAt - (newestMs - f.ms)
+          return { ...f, decoded: decodeFrame(f.frame), deltaMs, receivedAt }
         })
 
         if (r.frames.length > 0) cursor.current = r.frames[r.frames.length - 1].seq

@@ -2,7 +2,6 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar, type Page } from "@/components/AppSidebar"
 import { useRoute } from "@/hooks/use-route"
 import { useAuth } from "@/hooks/use-auth"
-import HomePage from "@/pages/HomePage"
 import ConsolePage from "@/pages/ConsolePage"
 import CommandsPage from "@/pages/CommandsPage"
 import SettingsPage from "@/pages/SettingsPage"
@@ -13,8 +12,6 @@ import LoginPage from "@/pages/LoginPage"
 function PageContent({ page }: { page: Page }) {
   switch (page) {
     case "home":
-      return <HomePage />
-    case "opentherm":
       return <OpenThermPage />
     case "console":
       return <ConsolePage />
