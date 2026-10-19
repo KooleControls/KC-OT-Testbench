@@ -9,6 +9,7 @@
 #include "ChannelProtocol.h"
 #include "ConnectionState.h"
 #include "SerialFraming.h"
+#include "Endpoint.h"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -20,15 +21,22 @@ enum class OpenThermSide : uint8_t
     Boiler,       // faces the boiler; the module plays the thermostat on it
 };
 
-/// One OpenTherm frame that crossed the module, in either direction.
+/// The real device on a line.
+inline Endpoint DeviceOn(OpenThermSide side)
+{
+    return side == OpenThermSide::Thermostat ? Endpoint::Thermostat : Endpoint::Boiler;
+}
+
+/// One OpenTherm frame on the bench: who sent it and who it went to. One record per
+/// frame, however many hops it took -- a forwarded frame is not recorded again.
 struct ModuleFrame
 {
-    uint32_t      seq;         // this gateway's numbering, from 1, gap-free
-    uint32_t      frame;       // the 32 bits on the line, parity included
-    uint32_t      gatewayMs;   // this gateway's clock when it was recorded
-    uint32_t      moduleMs;    // the module's clock when it collected it; 0 for a sent one
-    OpenThermSide side;
-    bool          sent;        // true: this gateway put it on the line
+    uint32_t seq;           // this testbench's numbering, from 1, gap-free
+    uint32_t frame;         // the 32 bits, parity included
+    uint32_t testbenchMs;   // this testbench's clock when it was recorded
+    uint32_t moduleMs;      // the module's clock when a line received it; 0 otherwise
+    Endpoint from;
+    Endpoint to;            // None: it went nowhere
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -79,7 +87,12 @@ public:
     bool IsReady() const { return phase_.load() == ConnectionState::Phase::Ready; }
 
     /// Put one frame on a line. Blocks until the module has started it or refused.
+    /// Recorded as a frame of its own.
     SendResult Send(OpenThermSide side, uint32_t frame);
+
+    /// Send on a frame a line received. Not recorded again: the received frame's
+    /// record already says where it went.
+    SendResult Forward(OpenThermSide side, uint32_t frame);
 
     /// Run any command the module has, as its console line (`opentherm status`), and
     /// copy the reply's text into `reply`. False when no reply came; `refused` when the
@@ -93,6 +106,10 @@ public:
                       uint32_t& latest, uint32_t& missed);
 
     static const char* SideName(OpenThermSide side);
+
+    /// Add a frame to the record the web UI reads. `moduleMs` only for one a line
+    /// received, which the link records itself.
+    void RecordFrame(Endpoint from, Endpoint to, uint32_t frame, uint32_t moduleMs = 0);
 
 private:
     friend class ModuleTransport;
@@ -157,7 +174,7 @@ private:
     void StreamBytes(const uint8_t* p, size_t n);
     void StreamRecord(const char* line);
     void FailPending();
-    void Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent);
+    SendResult SendOnLine(OpenThermSide side, uint32_t frame);
 
     /// Frame and send, under the UART lock. False when the lock is not to be had (an
     /// ISP session) or the UART would not take it.

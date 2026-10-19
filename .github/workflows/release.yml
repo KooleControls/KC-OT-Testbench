@@ -112,9 +112,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          name="KC-OT-Poc"
+          name="KC-OT-Testbench"
           cp gateway/build/merged-factory.bin "dist/$name-gateway-factory.bin"
-          cp gateway/build/Strux.bin          "dist/$name-gateway-app.bin"
+          cp gateway/build/KC-OT-Testbench.bin"dist/$name-gateway-app.bin"
           cp opentherm/build/opentherm.bin    "dist/$name-pcb1246.bin"
           cp opentherm/build/opentherm.hex    "dist/$name-pcb1246.hex"
           (cd dist && sha256sum *) | tee dist/SHA256SUMS
@@ -132,9 +132,9 @@ jobs:
           {
             echo "### Files"
             echo
-            echo "- **\`KC-OT-Poc-gateway-app.bin\`**: the gateway application, for an OTA. It carries the PCB1246 firmware below and puts it on the module at the next boot (\`module status\` shows how that went)."
-            echo "- **\`KC-OT-Poc-gateway-factory.bin\`**: bootloader, partition table and app in one image, for a first flash or a recovery: \`esptool write-flash 0x0 <file>\`."
-            echo "- **\`KC-OT-Poc-pcb1246.bin\` / \`.hex\`**: the PCB1246 firmware on its own, for flashing a module by hand (SWD or ISP). The gateway does not need these."
+            echo "- **\`KC-OT-Testbench-gateway-app.bin\`**: the gateway application, for an OTA. It carries the PCB1246 firmware below and puts it on the module at the next boot (\`module status\` shows how that went)."
+            echo "- **\`KC-OT-Testbench-gateway-factory.bin\`**: bootloader, partition table and app in one image, for a first flash or a recovery: \`esptool write-flash 0x0 <file>\`."
+            echo "- **\`KC-OT-Testbench-pcb1246.bin\` / \`.hex\`**: the PCB1246 firmware on its own, for flashing a module by hand (SWD or ISP). The gateway does not need these."
             echo
             echo "Commit \`$(git rev-parse --short HEAD)\`."
             echo

@@ -1,6 +1,7 @@
 // Singleton backend service — all communication over a single WebSocket.
 
 import { DEV_HOST } from "@/config"
+import type { Endpoint, Master, Slave } from "./routing"
 import { ReplyReader } from "./reply"
 import { ConsoleReplyReader, type ConsoleReply } from "./consoleReply"
 
@@ -751,7 +752,7 @@ class BackendService {
     return this.send<ModuleFramesReply>("module frames", { after })
   }
 
-  /** The gateway's serial link to the module. */
+  /** The testbench's serial link to the module. */
   async getModuleLink(): Promise<ModuleLinkState> {
     return this.send<ModuleLinkState>("module link")
   }
@@ -759,6 +760,22 @@ class BackendService {
   /** Put one frame on one of the module's lines. */
   async sendModuleFrame(side: OpenThermSide, frame: number): Promise<{ ok: boolean; error?: string }> {
     return this.send<{ ok: boolean; error?: string }>("module send", { side, frame })
+  }
+
+  /** Both simulators: running or not, and what they have heard. */
+  async getSimStatus(): Promise<SimStatus> {
+    return this.send<SimStatus>("sim status")
+  }
+
+  /** Which boiler each thermostat is connected to, and the forwarding counters. */
+  async getRouting(): Promise<RoutingState> {
+    return this.send<RoutingState>("route get")
+  }
+
+  /** Connect a thermostat to a boiler, or leave it open; whoever had that boiler is
+   *  left open. The device saves it. */
+  async setRoute(master: Master, slave: Slave | "open"): Promise<RoutingState> {
+    return this.send<RoutingState>("route set", { master, slave })
   }
 
   /** Turns the link indication on or off. Omitted fields are left alone by the
@@ -1078,25 +1095,79 @@ export interface DeviceInfo {
 
 export type OpenThermSide = "thermostat" | "boiler"
 
-/** One frame that crossed the module. */
+/** `route get` / `route set`: each thermostat's boiler, "open" for none. */
+export interface RoutingState {
+  ok: boolean
+  error?: string
+  thermostat: Slave | "open"
+  thermostatSim: Slave | "open"
+  counters: { forwarded: number; simulated: number; queueFull: number; busy: number; failed: number }
+}
+
+/** Who sends or receives a frame on the bench. "testbench": put on a line by hand. */
+export type FrameEndpoint = Endpoint | "testbench"
+
+/** One OpenTherm frame on the bench, recorded once however many hops it took. */
 export interface ModuleFrame {
-  /** The gateway's numbering: from 1, gap-free, restarting with the gateway. */
+  /** The testbench's numbering: from 1, gap-free, restarting with the testbench. */
   seq: number
-  side: OpenThermSide
-  /** rx: off the line, from the thermostat or boiler. tx: put on the line by the gateway. */
-  dir: "rx" | "tx"
-  /** The 32 bits on the line, parity included. */
+  from: FrameEndpoint
+  /** Absent: it went nowhere. */
+  to?: FrameEndpoint
+  /** The 32 bits, parity included. */
   frame: number
-  /** The gateway's clock (ms since boot) when it recorded the frame. */
+  /** The testbench's clock (ms since boot) when it recorded the frame. */
   ms: number
-  /** The module's clock when it collected the frame; rx only. */
+  /** The module's clock when a line received it; only for the real devices' frames. */
   moduleMs?: number
 }
 
+/** `sim status`: what each simulator has heard; a value is absent until heard. */
+export interface SimStatus {
+  thermostatSim: {
+    running: boolean
+    partner?: Endpoint
+    requests: number
+    responses: number
+    unanswered: number
+    unknownIds: number
+    lastResponseAgoMs?: number
+    boiler: {
+      fault?: boolean
+      ch?: boolean
+      dhw?: boolean
+      flame?: boolean
+      waterTemp?: number
+      modulation?: number
+      memberId?: number
+      dhwPresent?: boolean
+      modulating?: boolean
+      otVersion?: number
+    }
+  }
+  boilerSim: {
+    running: boolean
+    partner?: Endpoint
+    requests: number
+    unknownIds: number
+    lastRequestAgoMs?: number
+    thermostat: {
+      ch?: boolean
+      dhw?: boolean
+      controlSetpoint?: number
+      roomSetpoint?: number
+      roomTemp?: number
+      maxModulation?: number
+      memberId?: number
+      otVersion?: number
+    }
+  }
+}
+
 export interface ModuleFramesReply {
-  /** The newest seq the gateway holds. Below the cursor asked with: it restarted. */
+  /** The newest seq the testbench holds. Below the cursor asked with: it restarted. */
   latest: number
-  /** Frames after the cursor that had already left the gateway's ring. */
+  /** Frames after the cursor that had already left the testbench's ring. */
   missed: number
   /** Whether the link to the module is up right now. */
   link: boolean

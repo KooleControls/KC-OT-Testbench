@@ -29,7 +29,7 @@ public:
 
     void Init();
 
-    /// Copies the device name into `out`; falls back to "Strux" if the
+    /// Copies the device name into `out`; falls back to the project name if the
     /// stored value is empty.
     void GetDeviceName(char* out, size_t maxLen);
 
@@ -69,7 +69,7 @@ private:
     InitState initState_;
 
     // ── Settings (registered with SettingsManager in Init) ──
-    inline static StringSetting name_{ "device.name", "Device Name", "Strux" };
+    inline static StringSetting name_{ "device.name", "Device Name", "KC-OT-Testbench" };
 
     // What the application registered about itself. Pointers to literals, set once
     // during startup and read afterwards — no copy, no lock, nothing to free.

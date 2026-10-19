@@ -1,5 +1,6 @@
 #include "ModuleLinkManager.h"
 #include "ModuleFirmwareManager.h"
+#include "RoutingManager.h"
 #include "BoardContext.h"
 #include "StruxProvider.h"
 #include "CommandManager.h"
@@ -113,8 +114,8 @@ CommandEntry ModuleLinkManager::execCommand_{
 
 CommandEntry ModuleLinkManager::framesCommand_{
     "module frames", &InvokeCommand<&ModuleLinkManager::Cmd_Frames>,
-    "The OpenTherm frames that crossed the module, received and sent, from a ring of "
-    "the last 256. Poll with after=<last seq seen> to follow them.",
+    "The OpenTherm frames on the bench, from a ring of the last 256: who sent each "
+    "one (from) and who it went to (to). Poll with after=<last seq seen> to follow them.",
     { &afterArg, &maxArg }
 };
 
@@ -358,7 +359,10 @@ void ModuleLinkManager::StreamRecord(const char* line)
         counters_.badRecords++;
         return;
     }
-    Record(side, frame, ms, false);
+    // Routed first, so the record says where it went.
+    const Endpoint from = DeviceOn(side);
+    const Endpoint to = app_.getRoutingManager().OnLineFrame(from, frame);
+    RecordFrame(from, to, frame, ms);
 }
 
 bool ModuleLinkManager::WriteFrame(const uint8_t* frame, size_t len)
@@ -440,6 +444,19 @@ bool ModuleLinkManager::Request(const char* line, char* reply, size_t cap, uint3
 
 ModuleLinkManager::SendResult ModuleLinkManager::Send(OpenThermSide side, uint32_t frame)
 {
+    const SendResult r = SendOnLine(side, frame);
+    if (r == SendResult::Ok)
+        RecordFrame(Endpoint::Testbench, DeviceOn(side), frame);
+    return r;
+}
+
+ModuleLinkManager::SendResult ModuleLinkManager::Forward(OpenThermSide side, uint32_t frame)
+{
+    return SendOnLine(side, frame);
+}
+
+ModuleLinkManager::SendResult ModuleLinkManager::SendOnLine(OpenThermSide side, uint32_t frame)
+{
     if (!IsReady())
         return SendResult::NoLink;
 
@@ -454,10 +471,7 @@ ModuleLinkManager::SendResult ModuleLinkManager::Send(OpenThermSide side, uint32
         return SendResult::Failed;
 
     if (strstr(reply, "\"ok\":true") != nullptr)
-    {
-        Record(side, frame, 0, true);
         return SendResult::Ok;
-    }
     return strstr(reply, "busy") != nullptr ? SendResult::Busy : SendResult::Failed;
 }
 
@@ -471,16 +485,16 @@ bool ModuleLinkManager::Exec(const char* line, char* reply, size_t cap, bool& re
 
 // ── The ring ─────────────────────────────────────────────────
 
-void ModuleLinkManager::Record(OpenThermSide side, uint32_t frame, uint32_t moduleMs, bool sent)
+void ModuleLinkManager::RecordFrame(Endpoint from, Endpoint to, uint32_t frame, uint32_t moduleMs)
 {
     LOCK(ringMutex_);
     ModuleFrame& f = ring_[nextSeq_ % RING];
     f.seq = nextSeq_++;
     f.frame = frame;
-    f.gatewayMs = NowMs();
+    f.testbenchMs = NowMs();
     f.moduleMs = moduleMs;
-    f.side = side;
-    f.sent = sent;
+    f.from = from;
+    f.to = to;
 }
 
 size_t ModuleLinkManager::ReadFrames(uint32_t after, ModuleFrame* out, size_t max,
@@ -623,11 +637,12 @@ CommandResult ModuleLinkManager::Cmd_Frames(CommandContext& ctx)
         const ModuleFrame& f = frames[i];
         auto o = list.object();
         o.field("seq", f.seq);
-        o.field("side", SideName(f.side));
-        o.field("dir", f.sent ? "tx" : "rx");
+        o.field("from", EndpointName(f.from));
+        if (f.to != Endpoint::None)
+            o.field("to", EndpointName(f.to));
         o.field("frame", f.frame);
-        o.field("ms", f.gatewayMs);
-        if (!f.sent)
+        o.field("ms", f.testbenchMs);
+        if (f.from == Endpoint::Thermostat || f.from == Endpoint::Boiler)
             o.field("moduleMs", f.moduleMs);
     }
     return CommandResult::Ok;

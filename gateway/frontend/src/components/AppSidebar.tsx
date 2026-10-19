@@ -1,7 +1,8 @@
 import { useEffect } from "react"
 import {
   ActivityIcon,
-  LightbulbIcon,
+  CableIcon,
+  CpuIcon,
   TerminalIcon,
   SquareTerminalIcon,
   SettingsIcon,
@@ -26,11 +27,10 @@ import { PreReleaseBadge } from "@/components/PreReleaseBadge"
 import { DeviceInfoDialog } from "@/components/DeviceInfoDialog"
 import { ThemeToggle } from "@/components/ThemeToggle"
 
-// The nav, and the first entry is the product. "home" is a fixed id rather than the
-// feature's name so that a fork replacing this template's demo feature replaces the
-// CONTENTS of HomePage.tsx and the title and icon on this line — a bookmark to "/"
-// still lands on whatever that product's own screen is. LED is what Strux ships as
-// its worked example; a real product's first entry is its own thing.
+// The nav, and the first entry is the product: the OpenTherm frames. "home" is a fixed
+// id rather than the feature's name, so a bookmark to "/" lands on the product's own
+// screen. The Strux template's LED demo has no page here; its commands are still in
+// Commands.
 //
 // There is no "Device" entry: a chip name and a heap figure are reference material
 // you go looking for, not a destination, so they live behind the footer instead of
@@ -42,13 +42,9 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 // printed, the other is what you asked it. Naming the difference in the nav is
 // cheaper than finding it out by clicking.
 const navItems = [
-  { title: "LED", icon: LightbulbIcon, page: "home" as const },
-  {
-    title: "OpenTherm",
-    hint: "Frames through the module",
-    icon: ActivityIcon,
-    page: "opentherm" as const,
-  },
+  { title: "Frames", icon: ActivityIcon, page: "home" as const },
+  { title: "Connections", icon: CableIcon, page: "connections" as const },
+  { title: "Simulators", icon: CpuIcon, page: "simulators" as const },
   {
     title: "Console",
     hint: "Device logs (stdout)",

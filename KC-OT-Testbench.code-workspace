@@ -5,7 +5,7 @@
 			"path": "gateway"
 		},
 		{
-			"name": "opentherm (LPC11U68, FreeRTOS)",
+			"name": "opentherm (LPC11U68, bare metal)",
 			"path": "opentherm"
 		}
 	],

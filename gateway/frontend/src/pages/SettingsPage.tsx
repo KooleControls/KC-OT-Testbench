@@ -323,7 +323,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-2">
           <div className="min-w-0">
             <h1 className="text-xl font-bold leading-tight">Settings</h1>
-            <p className="truncate text-sm text-muted-foreground">Configure your Strux device</p>
+            <p className="truncate text-sm text-muted-foreground">Configure your device</p>
           </div>
           {dirty && (
             <span className="rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">

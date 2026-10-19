@@ -1,4 +1,4 @@
-// OpenTherm frames, read for a person. Display only: the modem and the gateway pass
+// OpenTherm frames, read for a person. Display only: the modem and the testbench pass
 // frames through as 32-bit numbers, and nothing that acts on a frame reads this file.
 //
 // A frame (OpenTherm Protocol 2.2):

@@ -42,6 +42,9 @@ set(APP_SOURCES
     "app/LedManager/LedManager.cpp"
     "app/ModuleFirmwareManager/ModuleFirmwareManager.cpp"
     "app/ModuleLinkManager/ModuleLinkManager.cpp"
+    "app/RoutingManager/RoutingManager.cpp"
+    "app/Simulators/ThermostatSimulator.cpp"
+    "app/Simulators/BoilerSimulator.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -79,6 +82,8 @@ set(INCLUDE_DIRS_LIST
     "app/LedManager"
     "app/ModuleFirmwareManager"
     "app/ModuleLinkManager"
+    "app/RoutingManager"
+    "app/Simulators"
 )
 
 set(COMPONENT_REQUIRES
@@ -247,9 +252,13 @@ else()
     # A device must still build on a machine without node. The packer falls back
     # to a placeholder page, so the firmware always has a valid blob and no code
     # anywhere has to handle a missing one.
-    message(STATUS "pnpm not found — the frontend will not be rebuilt")
+    # The stamp follows www/ instead, so a frontend built by hand is still packed;
+    # with no dependencies at all it was packed once and then never again.
+    message(STATUS "pnpm not found — the frontend will not be rebuilt, www/ is packed as it is")
+    file(GLOB_RECURSE WWW_FILES CONFIGURE_DEPENDS "${WWW_DIR}/*")
     add_custom_command(OUTPUT "${FRONTEND_STAMP}"
         COMMAND "${CMAKE_COMMAND}" -E touch "${FRONTEND_STAMP}"
+        DEPENDS ${WWW_FILES}
         VERBATIM)
 endif()
 
