@@ -1151,9 +1151,19 @@ export interface SimStatus {
     requests: number
     unknownIds: number
     lastRequestAgoMs?: number
+    /** When the thermostat last read the slave config (id 3); absent until it has. */
+    configReadAgoMs?: number
+    /** Who decides heating or cooling: the thermostat, or the boiler forcing one. */
+    mode: "thermostat" | "heat" | "cool" | "off"
+    /** The setpoint held across a mode change on id 9; absent when not holding. */
+    holding?: number
+    /** Id 9 reads until the hold is over. */
+    holdReadsLeft?: number
     thermostat: {
       ch?: boolean
       dhw?: boolean
+      cooling?: boolean
+      coolingControl?: number
       controlSetpoint?: number
       roomSetpoint?: number
       roomTemp?: number
