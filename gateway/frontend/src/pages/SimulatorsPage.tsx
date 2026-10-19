@@ -36,7 +36,28 @@ const PARTNER_NAMES: Record<Endpoint, string> = {
 type Field = Searchable & { key: string } & (
     | { kind: "number"; unit: string; step: number }
     | { kind: "toggle"; description: string }
+    | { kind: "flags"; bits: FlagBit[] }
   )
+
+/** One bit of a flags byte, and what it means clear and set. */
+interface FlagBit {
+  bit: number
+  label: string
+  off: string
+  on: string
+}
+
+/** Id 3's high byte as OpenTherm defines it. Bits 6 and 7 are OpenTherm 4.x; 2.2 reserves them. */
+const SLAVE_CONFIG_BITS: FlagBit[] = [
+  { bit: 0, label: "DHW present", off: "No hot water", on: "Hot water" },
+  { bit: 1, label: "Control type", off: "Modulating", on: "On/off" },
+  { bit: 2, label: "Cooling", off: "Not supported", on: "Supported" },
+  { bit: 3, label: "DHW config", off: "Instantaneous", on: "Storage tank" },
+  { bit: 4, label: "Master low-off & pump control", off: "Allowed", on: "Not allowed" },
+  { bit: 5, label: "CH2 present", off: "No", on: "Yes" },
+  { bit: 6, label: "Remote water filling (OT 4.x)", off: "Available", on: "Not available" },
+  { bit: 7, label: "Heat/cool switching (OT 4.x)", off: "By the master", on: "By the boiler" },
+]
 
 const THERMOSTAT_FIELDS: Field[] = [
   { key: "tsim.room", label: "Room temperature", kind: "number", unit: "°C", step: 0.1, ids: [24] },
@@ -56,8 +77,14 @@ const BOILER_FIELDS: Field[] = [
   { key: "bsim.flame", label: "Flame", kind: "toggle", description: "Report the flame on", ids: [0], keywords: "status burner" },
   { key: "bsim.ch", label: "CH active", kind: "toggle", description: "Report central heating active", ids: [0], keywords: "status" },
   { key: "bsim.dhw", label: "DHW active", kind: "toggle", description: "Report hot water active", ids: [0], keywords: "status" },
-  { key: "bsim.dhwpresent", label: "Hot water", kind: "toggle", description: "Has a hot water circuit", ids: [3], keywords: "capability capabilities dhw" },
-  { key: "bsim.modulating", label: "Modulating", kind: "toggle", description: "Modulates (else on/off)", ids: [3], keywords: "capability capabilities modulation" },
+  {
+    key: "bsim.config",
+    label: "Slave configuration",
+    kind: "flags",
+    bits: SLAVE_CONFIG_BITS,
+    ids: [3],
+    keywords: `slave config flags capability capabilities modulating modulation ${SLAVE_CONFIG_BITS.map((b) => `${b.label} ${b.off} ${b.on}`).join(" ")}`,
+  },
 ]
 
 type Values = Record<string, SettingEntry["value"]>
@@ -83,14 +110,16 @@ export default function SimulatorsPage() {
   }, [loadSettings])
 
   // Set and save in one go: a simulator setting is meant to apply now and to stay.
+  // Shown at once rather than when the save answers, so a second click on the same
+  // flags byte builds on the first instead of on the value from before it.
   const change = (key: string, value: string | boolean) => {
+    setValues((v) => ({ ...v, [key]: value }))
     backend
       .setSetting(key, String(value))
       .then((r) => {
         if (!r.ok) throw new Error("refused")
         return backend.saveSettings()
       })
-      .then(() => setValues((v) => ({ ...v, [key]: value })))
       .catch((e) => {
         toast.error("Not changed", { description: errorMessage(e) })
         loadSettings()
@@ -376,7 +405,52 @@ function SettingField({
         </label>
       </div>
     )
+  if (field.kind === "flags") return <FlagsField field={field} value={value} onChange={onChange} />
   return <NumberField field={field} value={value} onChange={onChange} />
+}
+
+/** A byte that goes on the line as it is, one switch per bit. */
+function FlagsField({
+  field,
+  value,
+  onChange,
+}: {
+  field: Extract<Field, { kind: "flags" }>
+  value: SettingEntry["value"] | undefined
+  onChange: (key: string, value: string | boolean) => void
+}) {
+  const byte = value === undefined ? undefined : Number(value) & 0xff
+  const set = (bit: number, on: boolean) => {
+    if (byte === undefined) return
+    onChange(field.key, String(on ? byte | (1 << bit) : byte & ~(1 << bit)))
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 sm:col-span-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+        <span className="text-sm font-medium">{field.label}</span>
+        <span className="text-muted-foreground font-mono text-xs">
+          ID {field.ids?.join(", ")} high byte{" "}
+          {byte === undefined
+            ? "—"
+            : `0x${byte.toString(16).toUpperCase().padStart(2, "0")} · ${byte.toString(2).padStart(8, "0")}`}
+        </span>
+      </div>
+      <div className="divide-y rounded-lg border text-sm">
+        {field.bits.map((b) => {
+          const on = byte !== undefined && (byte & (1 << b.bit)) !== 0
+          return (
+            <label key={b.bit} className="flex items-center gap-3 px-3 py-2">
+              <span className="text-muted-foreground w-10 shrink-0 font-mono text-xs">bit {b.bit}</span>
+              <span className="min-w-0 flex-1">{b.label}</span>
+              <span className="text-muted-foreground text-right">{byte === undefined ? "" : on ? b.on : b.off}</span>
+              <Switch checked={on} disabled={byte === undefined} onCheckedChange={(v) => set(b.bit, v)} />
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 /** Edited as text, sent when it is left or Enter is pressed, and only when changed. */
@@ -538,14 +612,23 @@ function boilerLiveRows(status?: SimStatus["boilerSim"]): RowDef[] {
     { label: "Room temperature", ids: [24], value: <Num value={t.roomTemp} unit="°C" /> },
     { label: "Max modulation", ids: [14], value: <Num value={t.maxModulation} unit="%" digits={0} /> },
     { label: "Last request", keywords: "requests", value: <Ago ms={status?.lastRequestAgoMs} /> },
+    {
+      label: "Slave configuration last read",
+      ids: [3],
+      keywords: "slave config flags requests",
+      value: <Ago ms={status?.configReadAgoMs} />,
+    },
   ]
 }
 
 function boilerInfoRows(values: Values, muted: boolean): RowDef[] {
-  const capabilities = [
-    values["bsim.dhwpresent"] === true && "Hot water",
-    values["bsim.modulating"] === true ? "Modulation" : values["bsim.modulating"] === false && "On/off",
-  ].filter(Boolean) as string[]
+  const config = values["bsim.config"] === undefined ? undefined : Number(values["bsim.config"])
+  const has = (bit: number) => config !== undefined && (config & (1 << bit)) !== 0
+  const capabilities = (
+    config === undefined
+      ? []
+      : [has(0) && "Hot water", has(1) ? "On/off" : "Modulation", has(2) && "Cooling", has(3) && "Storage tank", has(5) && "CH2"]
+  ).filter(Boolean) as string[]
   const chip = muted
     ? "bg-muted text-muted-foreground"
     : "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300"

@@ -1151,6 +1151,8 @@ export interface SimStatus {
     requests: number
     unknownIds: number
     lastRequestAgoMs?: number
+    /** When the thermostat last read the slave config (id 3); absent until it has. */
+    configReadAgoMs?: number
     thermostat: {
       ch?: boolean
       dhw?: boolean

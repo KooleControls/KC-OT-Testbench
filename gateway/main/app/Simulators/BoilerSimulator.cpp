@@ -8,7 +8,7 @@ using namespace opentherm;
 void BoilerSimulator::RegisterSettings(SettingsManager& settings)
 {
     settings.Register({ &waterTemp_, &modulation_, &flame_, &chActive_, &dhwActive_, &maxCapacity_,
-                        &dhwPresent_, &modulating_, &memberId_ });
+                        &config_, &memberId_ });
 }
 
 uint8_t BoilerSimulator::SlaveFlags() const
@@ -58,10 +58,11 @@ uint16_t BoilerSimulator::Read(uint8_t dataId, uint16_t value, bool& known)
         heard_.masterFlags = HighByte(value);
         heard_.known |= KNOWN_STATUS;
         return Bytes(heard_.masterFlags, SlaveFlags());
-    case 3: {
-        const uint8_t config = (dhwPresent_.Get() ? SLAVE_DHW_PRESENT : 0) | (modulating_.Get() ? 0 : SLAVE_ON_OFF_CONTROL);
-        return Bytes(config, static_cast<uint8_t>(memberId_.Get()));
-    }
+    case 3:
+        // Remembered so `sim status` can say when a changed config last went out.
+        heard_.lastConfigReadMs = heard_.lastRequestMs;
+        heard_.known |= KNOWN_CONFIG_READ;
+        return Bytes(static_cast<uint8_t>(config_.Get()), static_cast<uint8_t>(memberId_.Get()));
     case 5:   return 0;   // no fault flags, no OEM fault code
     case 9:   return 0;   // no remote override of the room setpoint
     case 15:  return Bytes(static_cast<uint8_t>(maxCapacity_.Get()), 0);
@@ -120,6 +121,8 @@ void BoilerSimulator::Report(ReplyObject& out, uint32_t nowMs)
     out.field("unknownIds", heard_.unknownIds);
     if (heard_.requests > 0)
         out.field("lastRequestAgoMs", nowMs - heard_.lastRequestMs);
+    if (heard_.known & KNOWN_CONFIG_READ)
+        out.field("configReadAgoMs", nowMs - heard_.lastConfigReadMs);
 
     auto thermostat = out.object("thermostat");
     if (heard_.known & KNOWN_STATUS)

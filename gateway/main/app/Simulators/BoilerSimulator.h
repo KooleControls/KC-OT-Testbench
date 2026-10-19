@@ -2,6 +2,7 @@
 
 #include "TypedSettings.h"
 #include "Mutex.h"
+#include "OpenThermFrame.h"
 #include <cstdint>
 
 class SettingsManager;
@@ -39,7 +40,7 @@ private:
     struct Heard
     {
         uint32_t requests = 0, unknownIds = 0;
-        uint32_t lastRequestMs = 0;
+        uint32_t lastRequestMs = 0, lastConfigReadMs = 0;
         uint8_t known = 0;
         uint8_t masterFlags = 0, memberId = 0;
         float controlSetpoint = 0, roomSetpoint = 0, roomTemp = 0, maxModulation = 0, otVersion = 0;
@@ -52,6 +53,7 @@ private:
     static constexpr uint8_t KNOWN_MAX_MODULATION = 1 << 4;
     static constexpr uint8_t KNOWN_MEMBER = 1 << 5;
     static constexpr uint8_t KNOWN_VERSION = 1 << 6;
+    static constexpr uint8_t KNOWN_CONFIG_READ = 1 << 7;   // it has asked for id 3
 
     uint8_t SlaveFlags() const;
     uint16_t Read(uint8_t dataId, uint16_t value, bool& known);
@@ -64,7 +66,9 @@ private:
     inline static BoolSetting chActive_{ "bsim.ch", "Boiler Sim CH Active", true };
     inline static BoolSetting dhwActive_{ "bsim.dhw", "Boiler Sim DHW Active", false };
     inline static UInt32Setting maxCapacity_{ "bsim.maxkw", "Boiler Sim Max Capacity (kW)", 24 };
-    inline static BoolSetting dhwPresent_{ "bsim.dhwpresent", "Boiler Sim Has Hot Water", true };
-    inline static BoolSetting modulating_{ "bsim.modulating", "Boiler Sim Modulating", true };
+    // Id 3's high byte as it goes on the line, bit for bit, so a test can answer with any
+    // combination of slave configuration flags. Only the low byte is used. The default
+    // is a modulating boiler with hot water.
+    inline static UInt32Setting config_{ "bsim.config", "Boiler Sim Slave Config Flags (ID 3)", opentherm::SLAVE_DHW_PRESENT };
     inline static UInt32Setting memberId_{ "bsim.member", "Boiler Sim Member Id", 0 };
 };
