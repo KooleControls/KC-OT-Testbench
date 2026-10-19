@@ -33,31 +33,23 @@ const PARTNER_NAMES: Record<Endpoint, string> = {
   boilerSim: "the boiler simulator",
 }
 
-type Field = Searchable & { key: string } & (
+type Field = Searchable & {
+  key: string
+  /** The heading it is shown under; fields without one are shown without. */
+  group?: string
+  /** Takes the whole row. */
+  wide?: boolean
+  /** Why it does nothing with the other settings as they are, or undefined when it does. */
+  inactiveWhy?: (values: Values) => string | undefined
+} & (
     | { kind: "number"; unit: string; step: number }
     | { kind: "toggle"; description: string }
-    | { kind: "flags"; bits: FlagBit[] }
+    // One of a few values. With `mask`, of a part of a setting that packs several
+    // answers into one number (the boiler's configuration, id 3).
+    | { kind: "choice"; mask?: number; options: { label: string; value: number }[] }
+    // A part of such a setting, as a switch: on when the masked part equals `on`.
+    | { kind: "part"; mask: number; on: number; description: string }
   )
-
-/** One bit of a flags byte, and what it means clear and set. */
-interface FlagBit {
-  bit: number
-  label: string
-  off: string
-  on: string
-}
-
-/** Id 3's high byte as OpenTherm defines it. Bits 6 and 7 are OpenTherm 4.x; 2.2 reserves them. */
-const SLAVE_CONFIG_BITS: FlagBit[] = [
-  { bit: 0, label: "DHW present", off: "No hot water", on: "Hot water" },
-  { bit: 1, label: "Control type", off: "Modulating", on: "On/off" },
-  { bit: 2, label: "Cooling", off: "Not supported", on: "Supported" },
-  { bit: 3, label: "DHW config", off: "Instantaneous", on: "Storage tank" },
-  { bit: 4, label: "Master low-off & pump control", off: "Allowed", on: "Not allowed" },
-  { bit: 5, label: "CH2 present", off: "No", on: "Yes" },
-  { bit: 6, label: "Remote water filling (OT 4.x)", off: "Available", on: "Not available" },
-  { bit: 7, label: "Heat/cool switching (OT 4.x)", off: "By the master", on: "By the boiler" },
-]
 
 const THERMOSTAT_FIELDS: Field[] = [
   { key: "tsim.room", label: "Room temperature", kind: "number", unit: "°C", step: 0.1, ids: [24] },
@@ -69,21 +61,121 @@ const THERMOSTAT_FIELDS: Field[] = [
   { key: "tsim.member", label: "Member id", kind: "number", unit: "", step: 1, ids: [2], keywords: "master config device" },
 ]
 
+const boilerDecides = (values: Values) => Number(values["bsim.mode"] ?? 0) !== 0
+
 const BOILER_FIELDS: Field[] = [
-  { key: "bsim.water", label: "Water temperature", kind: "number", unit: "°C", step: 1, ids: [25], keywords: "boiler flow" },
-  { key: "bsim.mod", label: "Modulation level", kind: "number", unit: "%", step: 1, ids: [17] },
-  { key: "bsim.maxkw", label: "Maximum capacity", kind: "number", unit: "kW", step: 1, ids: [15], keywords: "power" },
-  { key: "bsim.member", label: "Member id", kind: "number", unit: "", step: 1, ids: [3], keywords: "slave config device" },
-  { key: "bsim.flame", label: "Flame", kind: "toggle", description: "Report the flame on", ids: [0], keywords: "status burner" },
-  { key: "bsim.ch", label: "CH active", kind: "toggle", description: "Report central heating active", ids: [0], keywords: "status" },
-  { key: "bsim.dhw", label: "DHW active", kind: "toggle", description: "Report hot water active", ids: [0], keywords: "status" },
+  // Who decides between heating and cooling: the thermostat, or the boiler forcing it.
+  {
+    key: "bsim.mode",
+    group: "Heating or cooling",
+    label: "Decided by",
+    kind: "choice",
+    wide: true,
+    options: [
+      { label: "The thermostat", value: 0 },
+      { label: "Boiler: heating", value: 1 },
+      { label: "Boiler: cooling", value: 2 },
+      { label: "Boiler: off", value: 3 },
+    ],
+    ids: [0, 3],
+    keywords: "mode force forced heat cool heating cooling hcc",
+  },
+  {
+    key: "bsim.hold",
+    group: "Heating or cooling",
+    label: "Keep the setpoint",
+    kind: "toggle",
+    description: "Hold the old setpoint across a switch",
+    ids: [9, 16],
+    keywords: "override remote hysteresis mode change",
+    inactiveWhy: (v) => (boilerDecides(v) ? undefined : "Only when the boiler decides"),
+  },
+  {
+    key: "bsim.ch",
+    group: "Heating or cooling",
+    label: "Heating active",
+    kind: "toggle",
+    description: "Report heating active",
+    ids: [0],
+    keywords: "status ch central",
+    inactiveWhy: (v) => (boilerDecides(v) ? "Set by the boiler's choice" : undefined),
+  },
+  {
+    key: "bsim.cool",
+    group: "Heating or cooling",
+    label: "Cooling active",
+    kind: "toggle",
+    description: "Report cooling active",
+    ids: [0],
+    keywords: "status",
+    inactiveWhy: (v) => (boilerDecides(v) ? "Set by the boiler's choice" : undefined),
+  },
+  { key: "bsim.water", group: "Boiler", label: "Water temperature", kind: "number", unit: "°C", step: 1, ids: [25], keywords: "boiler flow" },
+  { key: "bsim.mod", group: "Boiler", label: "Modulation level", kind: "number", unit: "%", step: 1, ids: [17] },
+  { key: "bsim.maxkw", group: "Boiler", label: "Maximum capacity", kind: "number", unit: "kW", step: 1, ids: [15], keywords: "power" },
+  { key: "bsim.member", group: "Boiler", label: "Member id", kind: "number", unit: "", step: 1, ids: [3], keywords: "slave config device" },
+  { key: "bsim.flame", group: "Boiler", label: "Flame", kind: "toggle", description: "Report the flame on", ids: [0], keywords: "status burner" },
+  { key: "bsim.dhw", group: "Boiler", label: "DHW active", kind: "toggle", description: "Report hot water active", ids: [0], keywords: "status" },
+  // What kind of boiler it is: the slave configuration (id 3), one control per answer.
   {
     key: "bsim.config",
-    label: "Slave configuration",
-    kind: "flags",
-    bits: SLAVE_CONFIG_BITS,
+    group: "Boiler type",
+    label: "Hot water",
+    kind: "choice",
+    mask: 0x09,
+    options: [
+      { label: "None", value: 0x00 },
+      { label: "Instant", value: 0x01 },
+      { label: "Storage tank", value: 0x09 },
+    ],
     ids: [3],
-    keywords: `slave config flags capability capabilities modulating modulation ${SLAVE_CONFIG_BITS.map((b) => `${b.label} ${b.off} ${b.on}`).join(" ")}`,
+    keywords: "capability capabilities dhw combi slave config",
+  },
+  {
+    key: "bsim.config",
+    group: "Boiler type",
+    label: "Burner",
+    kind: "choice",
+    mask: 0x02,
+    options: [
+      { label: "Modulating", value: 0x00 },
+      { label: "On/off", value: 0x02 },
+    ],
+    ids: [3],
+    keywords: "capability capabilities control type modulation slave config",
+  },
+  {
+    key: "bsim.config",
+    group: "Boiler type",
+    label: "Cooling",
+    kind: "part",
+    mask: 0x04,
+    on: 0x04,
+    description: "Can also cool",
+    ids: [3],
+    keywords: "capability capabilities heat pump slave config",
+  },
+  {
+    key: "bsim.config",
+    group: "Boiler type",
+    label: "Second heating circuit",
+    kind: "part",
+    mask: 0x20,
+    on: 0x20,
+    description: "Has a second circuit",
+    ids: [3],
+    keywords: "capability capabilities ch2 slave config",
+  },
+  {
+    key: "bsim.config",
+    group: "Boiler type",
+    label: "Pump at low load",
+    kind: "part",
+    mask: 0x10,
+    on: 0x00,
+    description: "The thermostat may switch it off",
+    ids: [3],
+    keywords: "capability capabilities low-off pump control slave config",
   },
 ]
 
@@ -344,9 +436,24 @@ function SimulatorCard({
       {fields.length > 0 && (
         <div className={`p-4 ${live.length > 0 || info.length > 0 ? "border-t" : ""}`}>
           <h3 className="mb-3 font-medium">Simulation settings</h3>
-          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-            {fields.map((f) => (
-              <SettingField key={f.key} field={f} value={values[f.key]} onChange={onChange} />
+          <div className="flex flex-col gap-5">
+            {groupFields(fields).map(([group, inGroup]) => (
+              <div key={group ?? ""}>
+                {group && (
+                  <h4 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">{group}</h4>
+                )}
+                <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                  {inGroup.map((f) => (
+                    <SettingField
+                      key={`${f.key}:${f.label}`}
+                      field={f}
+                      value={values[f.key]}
+                      inactive={f.inactiveWhy?.(values)}
+                      onChange={onChange}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
           {!searching && (
@@ -382,73 +489,98 @@ function ConnectionStatus({ running, partner }: { running?: boolean; partner?: E
   )
 }
 
+/** The fields under their headings, in the order the headings first appear. */
+function groupFields(fields: Field[]): [string | undefined, Field[]][] {
+  const groups = new Map<string | undefined, Field[]>()
+  for (const f of fields) groups.set(f.group, [...(groups.get(f.group) ?? []), f])
+  return [...groups]
+}
+
 function SettingField({
   field,
   value,
+  inactive,
   onChange,
 }: {
   field: Field
   value: SettingEntry["value"] | undefined
+  /** Why it has no effect right now: shown instead of its description, and it cannot be changed. */
+  inactive?: string
   onChange: (key: string, value: string | boolean) => void
 }) {
-  if (field.kind === "toggle")
-    return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">{field.label}</span>
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={value === true}
-            disabled={value === undefined}
-            onCheckedChange={(on) => onChange(field.key, on)}
-          />
-          <span className="text-muted-foreground">{field.description}</span>
-        </label>
-      </div>
-    )
-  if (field.kind === "flags") return <FlagsField field={field} value={value} onChange={onChange} />
-  return <NumberField field={field} value={value} onChange={onChange} />
-}
+  if (field.kind === "number") return <NumberField field={field} value={value} onChange={onChange} />
 
-/** A byte that goes on the line as it is, one switch per bit. */
-function FlagsField({
-  field,
-  value,
-  onChange,
-}: {
-  field: Extract<Field, { kind: "flags" }>
-  value: SettingEntry["value"] | undefined
-  onChange: (key: string, value: string | boolean) => void
-}) {
-  const byte = value === undefined ? undefined : Number(value) & 0xff
-  const set = (bit: number, on: boolean) => {
-    if (byte === undefined) return
-    onChange(field.key, String(on ? byte | (1 << bit) : byte & ~(1 << bit)))
+  const n = value === undefined ? undefined : Number(value)
+  const disabled = value === undefined || inactive !== undefined
+  let control: ReactNode
+  if (field.kind === "toggle" || field.kind === "part") {
+    const on = field.kind === "toggle" ? value === true : n !== undefined && (n & field.mask) === field.on
+    const set = (to: boolean) => {
+      if (field.kind === "toggle") onChange(field.key, to)
+      else if (n !== undefined)
+        onChange(field.key, String((n & ~field.mask) | (to ? field.on : field.on ^ field.mask)))
+    }
+    control = (
+      <label className="flex items-center gap-2 text-sm">
+        <Switch checked={on} disabled={disabled} onCheckedChange={set} />
+        <span className="text-muted-foreground">{inactive ?? field.description}</span>
+      </label>
+    )
+  } else {
+    const mask = field.mask ?? ~0
+    control = (
+      <>
+        <Segmented
+          label={field.label}
+          options={field.options.map((o) => o.label)}
+          selected={n === undefined ? undefined : field.options.findIndex((o) => (n & mask) === o.value)}
+          disabled={disabled}
+          onSelect={(i) => n !== undefined && onChange(field.key, String((n & ~mask) | field.options[i].value))}
+        />
+        {inactive && <span className="text-muted-foreground text-sm">{inactive}</span>}
+      </>
+    )
   }
 
   return (
-    <div className="flex flex-col gap-1.5 sm:col-span-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-        <span className="text-sm font-medium">{field.label}</span>
-        <span className="text-muted-foreground font-mono text-xs">
-          ID {field.ids?.join(", ")} high byte{" "}
-          {byte === undefined
-            ? "—"
-            : `0x${byte.toString(16).toUpperCase().padStart(2, "0")} · ${byte.toString(2).padStart(8, "0")}`}
-        </span>
-      </div>
-      <div className="divide-y rounded-lg border text-sm">
-        {field.bits.map((b) => {
-          const on = byte !== undefined && (byte & (1 << b.bit)) !== 0
-          return (
-            <label key={b.bit} className="flex items-center gap-3 px-3 py-2">
-              <span className="text-muted-foreground w-10 shrink-0 font-mono text-xs">bit {b.bit}</span>
-              <span className="min-w-0 flex-1">{b.label}</span>
-              <span className="text-muted-foreground text-right">{byte === undefined ? "" : on ? b.on : b.off}</span>
-              <Switch checked={on} disabled={byte === undefined} onCheckedChange={(v) => set(b.bit, v)} />
-            </label>
-          )
-        })}
-      </div>
+    <div className={`flex flex-col gap-1.5 ${field.wide ? "sm:col-span-2" : ""}`}>
+      <span className={`text-sm font-medium ${inactive ? "text-muted-foreground" : ""}`}>{field.label}</span>
+      {control}
+    </div>
+  )
+}
+
+/** A row of buttons of which one is chosen. */
+function Segmented({
+  label,
+  options,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  label: string
+  options: string[]
+  selected?: number
+  disabled?: boolean
+  onSelect: (index: number) => void
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="bg-muted flex w-full flex-wrap rounded-lg p-0.5">
+      {options.map((o, i) => (
+        <button
+          key={o}
+          type="button"
+          role="radio"
+          aria-checked={selected === i}
+          disabled={disabled}
+          onClick={() => selected !== i && onSelect(i)}
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors disabled:opacity-50 ${
+            selected === i ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {o}
+        </button>
+      ))}
     </div>
   )
 }
@@ -601,6 +733,7 @@ function boilerLiveRows(status?: SimStatus["boilerSim"]): RowDef[] {
   const t = status?.thermostat ?? {}
   return [
     { label: "CH enable", ids: [0], keywords: "status central heating", value: <OnOff on={t.ch} /> },
+    { label: "Cooling enable", ids: [0], keywords: "status mode", value: <OnOff on={t.cooling} /> },
     { label: "DHW enable", ids: [0], keywords: "status hot water", value: <OnOff on={t.dhw} /> },
     {
       label: "Flow temperature (requested)",
@@ -608,14 +741,29 @@ function boilerLiveRows(status?: SimStatus["boilerSim"]): RowDef[] {
       keywords: "control setpoint",
       value: <Num value={t.controlSetpoint} unit="°C" />,
     },
+    { label: "Cooling level (requested)", ids: [7], keywords: "cooling control signal", value: <Num value={t.coolingControl} unit="%" digits={0} /> },
     { label: "Room setpoint", ids: [16], value: <Num value={t.roomSetpoint} unit="°C" /> },
+    {
+      label: "Holding setpoint",
+      ids: [9],
+      keywords: "override remote mode change keep",
+      value:
+        status?.holding === undefined ? (
+          <Unknown />
+        ) : (
+          <span>
+            <span className="font-mono">{status.holding.toFixed(1)} °C</span>
+            <span className="text-muted-foreground"> · {status.holdReadsLeft} more</span>
+          </span>
+        ),
+    },
     { label: "Room temperature", ids: [24], value: <Num value={t.roomTemp} unit="°C" /> },
     { label: "Max modulation", ids: [14], value: <Num value={t.maxModulation} unit="%" digits={0} /> },
     { label: "Last request", keywords: "requests", value: <Ago ms={status?.lastRequestAgoMs} /> },
     {
-      label: "Slave configuration last read",
+      label: "Boiler type last asked",
       ids: [3],
-      keywords: "slave config flags requests",
+      keywords: "slave config capabilities requests",
       value: <Ago ms={status?.configReadAgoMs} />,
     },
   ]

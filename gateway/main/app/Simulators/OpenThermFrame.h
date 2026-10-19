@@ -27,14 +27,20 @@ enum class MsgType : uint8_t
 // Master status (id 0, high byte) and slave status (id 0, low byte) flags.
 constexpr uint8_t MASTER_CH_ENABLE = 1 << 0;
 constexpr uint8_t MASTER_DHW_ENABLE = 1 << 1;
+constexpr uint8_t MASTER_COOLING_ENABLE = 1 << 2;
 constexpr uint8_t SLAVE_FAULT = 1 << 0;
 constexpr uint8_t SLAVE_CH_MODE = 1 << 1;
 constexpr uint8_t SLAVE_DHW_MODE = 1 << 2;
 constexpr uint8_t SLAVE_FLAME = 1 << 3;
+constexpr uint8_t SLAVE_COOLING = 1 << 4;
 
 // Slave configuration (id 3, high byte).
 constexpr uint8_t SLAVE_DHW_PRESENT = 1 << 0;
 constexpr uint8_t SLAVE_ON_OFF_CONTROL = 1 << 1;   // clear: modulating
+// Reserved in 2.2. Honeywell/Airios read it as "the boiler decides heating or cooling",
+// told to the thermostat in the CH mode and cooling bits of its id 0 answer; this is
+// how the KC plug-in board (PCB1246, 2020 firmware) forces a mode.
+constexpr uint8_t SLAVE_DECIDES_HEAT_COOL = 1 << 7;
 
 /// OpenTherm version these simulators claim to speak.
 constexpr float PROTOCOL_VERSION = 2.2f;
