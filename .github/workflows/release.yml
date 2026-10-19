@@ -113,10 +113,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           name="KC-OT-Testbench"
-          cp gateway/build/merged-factory.bin "dist/$name-gateway-factory.bin"
-          cp gateway/build/KC-OT-Testbench.bin"dist/$name-gateway-app.bin"
-          cp opentherm/build/opentherm.bin    "dist/$name-pcb1246.bin"
-          cp opentherm/build/opentherm.hex    "dist/$name-pcb1246.hex"
+          cp gateway/build/merged-factory.bin  "dist/$name-gateway-factory.bin"
+          cp gateway/build/KC-OT-Testbench.bin "dist/$name-gateway-app.bin"
+          cp opentherm/build/opentherm.bin     "dist/$name-pcb1246.bin"
+          cp opentherm/build/opentherm.hex     "dist/$name-pcb1246.hex"
           (cd dist && sha256sum *) | tee dist/SHA256SUMS
 
       - name: Upload artifacts
