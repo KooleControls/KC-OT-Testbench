@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { AirVentIcon, InfoIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -17,44 +17,27 @@ import { DEMANDS, FAN_SPEEDS, MODES, SWINGS } from "@/lib/modbus"
  *
  * Laid out like the CoolPlug config tool: what the indoor unit reports on the left,
  * its remote on the right -- the indoor unit's state lives on the testbench, and both
- * the gateway and this remote change it (`coolplug set`). Below, the simulation
- * itself: whether the unit is on the bus, its address, its room temperature and the
- * faults to simulate. Those are ordinary settings (cpN.*), applied within a second.
+ * the gateway and this remote change it (`coolplug set`). The simulation itself:
+ * whether the unit is on the bus and its address in the card's header, its room
+ * temperature and the faults to simulate below. Those are ordinary settings (cpN.*),
+ * applied within a second;
+ * the Simulators page holds them, as it does the other simulators', and sets and saves
+ * them in one go.
  */
 
 const STATUS_POLL_MS = 1000
 
 type Values = Record<string, SettingEntry["value"]>
 
-export function CoolPlugSimulators() {
+export function CoolPlugSimulators({
+  values,
+  onSetting,
+}: {
+  values: Values
+  onSetting: (key: string, value: string | boolean) => void
+}) {
   const { units, setUnits } = useCoolPlugs(STATUS_POLL_MS)
-  const [values, setValues] = useState<Values>({})
   const [selected, setSelected] = useState(1)
-
-  const loadSettings = useCallback(() => {
-    backend
-      .getSettings()
-      .then((r) => setValues(Object.fromEntries(r.settings.map((s) => [s.key, s.value]))))
-      .catch((e) => toast.error("Could not read the settings", { description: errorMessage(e) }))
-  }, [])
-
-  useEffect(loadSettings, [loadSettings])
-
-  // Set and save in one go, as the other simulators do: a simulation setting is meant
-  // to apply now and to stay.
-  const changeSetting = (key: string, value: string | boolean) => {
-    setValues((v) => ({ ...v, [key]: value }))
-    backend
-      .setSetting(key, String(value))
-      .then((r) => {
-        if (!r.ok) throw new Error("refused")
-        return backend.saveSettings()
-      })
-      .catch((e) => {
-        toast.error("Not changed", { description: errorMessage(e) })
-        loadSettings()
-      })
-  }
 
   const applied = (unit?: CoolPlugUnit) => {
     if (unit) setUnits((all) => all?.map((u) => (u.unit === unit.unit ? unit : u)) ?? null)
@@ -78,13 +61,14 @@ export function CoolPlugSimulators() {
 
   return (
     <section className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-2xl font-semibold">CoolPlug simulators</h2>
-        <p className="text-muted-foreground mt-1">
-          Up to ten CoolPlugs, each with its indoor unit, answering a gateway on the RS485 bus. Their
-          traffic is on the RS485 page.
-        </p>
-      </div>
+      <p className="text-muted-foreground">
+        Up to ten CoolPlugs, each with its indoor unit, answering a gateway on the RS485 bus. Their traffic is on
+        the{" "}
+        <a href="#/rs485" className="hover:text-foreground underline underline-offset-4">
+          RS485 page
+        </a>
+        .
+      </p>
 
       <div role="tablist" aria-label="Simulated CoolPlug" className="grid grid-cols-5 gap-2 lg:grid-cols-10">
         {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
@@ -117,7 +101,7 @@ export function CoolPlugSimulators() {
         n={selected}
         unit={unit}
         values={values}
-        onSetting={changeSetting}
+        onSetting={onSetting}
         onControl={control}
         onFilter={setFilter}
       />
@@ -145,8 +129,10 @@ function UnitCard({
 
   return (
     <Card className={`gap-0 overflow-hidden py-0 transition-colors ${on ? "" : "bg-muted/20"}`}>
+      {/* Whether it is on the bus and at which address: the first thing to set, so in
+          the header rather than with the other settings below the fold. */}
       <div
-        className={`flex items-center gap-4 border-b p-4 transition-colors ${
+        className={`flex flex-wrap items-center gap-4 border-b p-4 transition-colors ${
           on ? "bg-orange-50/70 dark:bg-orange-950/30" : "bg-muted/60"
         }`}
       >
@@ -159,7 +145,18 @@ function UnitCard({
             {unit ? `S/N ${unit.serial} · firmware ${unit.firmware}` : "…"}
           </div>
         </div>
-        <BusState unit={unit} on={on} />
+        <div className="flex items-start gap-6">
+          <NumberSetting
+            id={key("addr")}
+            label="Modbus address"
+            unit=""
+            step={1}
+            value={values[key("addr")]}
+            onChange={(v) => onSetting(key("addr"), v)}
+            className="w-28"
+          />
+          <BusSwitch unit={unit} value={values[key("en")]} onChange={(v) => onSetting(key("en"), v)} />
+        </div>
       </div>
 
       <div className="grid gap-4 p-4 md:grid-cols-2">
@@ -226,8 +223,6 @@ function UnitCard({
       <div className="border-t p-4">
         <h3 className="mb-3 font-medium">Simulation settings</h3>
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-          <Toggle label="On the bus" description="Answer at its Modbus address" value={values[key("en")]} onChange={(v) => onSetting(key("en"), v)} />
-          <NumberSetting id={key("addr")} label="Modbus address" unit="" step={1} value={values[key("addr")]} onChange={(v) => onSetting(key("addr"), v)} />
           <NumberSetting id={key("room")} label="Room temperature" unit="°C" step={0.5} value={values[key("room")]} onChange={(v) => onSetting(key("room"), v)} hint="Reported ±0.1 to 0.5 °C around this, new every 10 s" />
           <NumberSetting id={key("fail")} label="HVAC failure code" unit="" step={1} value={values[key("fail")]} onChange={(v) => onSetting(key("fail"), v)} hint="0: no failure. Anything else also sets the line state's failure bit" />
           <Toggle label="Indoor unit connected" description="Off: the line state says the CoolPlug lost its indoor unit" value={values[key("indoor")]} onChange={(v) => onSetting(key("indoor"), v)} />
@@ -247,21 +242,31 @@ function UnitCard({
   )
 }
 
-function BusState({ unit, on }: { unit?: CoolPlugUnit; on: boolean }) {
-  const [dot, text, sub] = !on
-    ? ["bg-muted-foreground/40", "Off the bus", "Switch it on below"]
+/** The cpN.en switch, with what the unit is doing on the bus beside it. */
+function BusSwitch({
+  unit,
+  value,
+  onChange,
+}: {
+  unit?: CoolPlugUnit
+  value: SettingEntry["value"] | undefined
+  onChange: (on: boolean) => void
+}) {
+  const on = value === true
+  const [text, color] = !on
+    ? ["Off the bus", "text-muted-foreground"]
     : unit?.restarting
-      ? ["bg-amber-500", "Restarting", unit.pendingAddress ? `then at address ${unit.pendingAddress}` : ""]
+      ? [unit.pendingAddress ? `Restarting, then at ${unit.pendingAddress}` : "Restarting", "text-amber-600 dark:text-amber-400"]
       : unit && !unit.answers
-        ? ["bg-amber-500", "Silent", `at address ${unit.address}, answering nothing`]
-        : ["bg-emerald-500", "On the bus", unit ? `Modbus address ${unit.address}` : ""]
+        ? ["Silent: answers nothing", "text-amber-600 dark:text-amber-400"]
+        : ["Answering", "text-emerald-700 dark:text-emerald-400"]
   return (
-    <div className="text-right text-sm">
-      <div className="flex items-center justify-end gap-1.5">
-        <span className={`size-2.5 rounded-full ${dot}`} />
-        <span className={on ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground font-medium"}>{text}</span>
-      </div>
-      <div className="text-muted-foreground text-xs">{sub}</div>
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium">On the bus</span>
+      <label className="flex h-9 items-center gap-2 text-sm">
+        <Switch checked={on} disabled={value === undefined} onCheckedChange={onChange} />
+        <span className={`whitespace-nowrap ${color}`}>{text}</span>
+      </label>
     </div>
   )
 }
@@ -402,6 +407,7 @@ function NumberSetting({
   step,
   value,
   hint,
+  className = "",
   onChange,
 }: {
   id: string
@@ -410,6 +416,7 @@ function NumberSetting({
   step: number
   value: SettingEntry["value"] | undefined
   hint?: string
+  className?: string
   onChange: (value: string) => void
 }) {
   // A float setting comes back as e.g. 21.299999; show it as it was typed.
@@ -423,7 +430,7 @@ function NumberSetting({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={`flex flex-col gap-1.5 ${className}`}>
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>

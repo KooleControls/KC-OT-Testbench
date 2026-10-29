@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react"
-import { FlameIcon, InfoIcon, SearchIcon, SearchXIcon, ThermometerIcon, XIcon } from "lucide-react"
+import { AirVentIcon, FlameIcon, InfoIcon, SearchIcon, SearchXIcon, ThermometerIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -22,13 +22,48 @@ import { matchesSearch, searchTerms, type Searchable } from "@/lib/simSearch"
  *
  * A simulator that is not connected is drawn in gray, but stays editable: setting it
  * up before connecting it is the usual order. The search narrows both simulators to
- * the settings and rows that match.
+ * the settings and rows that match, and each tab says how many.
  *
- * Below them, the CoolPlugs simulated on the RS485 bus (components/CoolPlugSimulators),
- * which the search leaves alone: ten units of the same few settings search poorly.
+ * The third tab holds the CoolPlugs simulated on the RS485 bus
+ * (components/CoolPlugSimulators), which the search leaves alone: ten units of the
+ * same few settings search poorly.
  */
 
 const STATUS_POLL_MS = 1000
+
+const TABS = ["thermostat", "boiler", "coolplug"] as const
+type Tab = (typeof TABS)[number]
+
+// The open tab is the hash's second part (#/simulators/coolplug), so a link opens it
+// and F5 keeps it. Without one, the tab open last time the page was shown.
+let lastTab: Tab = "thermostat"
+
+function tabFromHash(): Tab {
+  const t = window.location.hash.replace(/^#\/?/, "").split("/")[1]?.toLowerCase()
+  return TABS.includes(t as Tab) ? (t as Tab) : lastTab
+}
+
+function useTab(): [Tab, (tab: Tab) => void] {
+  const [tab, setTabState] = useState(tabFromHash)
+
+  useEffect(() => {
+    lastTab = tab
+  }, [tab])
+
+  useEffect(() => {
+    const onHashChange = () => setTabState(tabFromHash())
+    window.addEventListener("hashchange", onHashChange)
+    return () => window.removeEventListener("hashchange", onHashChange)
+  }, [])
+
+  const setTab = useCallback((t: Tab) => {
+    // Replaced, not pushed: Back leaves the page instead of stepping through its tabs.
+    history.replaceState(null, "", `#/simulators/${t}`)
+    setTabState(t)
+  }, [])
+
+  return [tab, setTab]
+}
 
 const PARTNER_NAMES: Record<Endpoint, string> = {
   thermostat: "the thermostat",
@@ -189,6 +224,7 @@ export default function SimulatorsPage() {
   const [status, setStatus] = useState<SimStatus | null>(null)
   const [values, setValues] = useState<Values>({})
   const [query, setQuery] = useState("")
+  const [tab, setTab] = useTab()
 
   const loadSettings = useCallback(() => {
     backend
@@ -235,6 +271,9 @@ export default function SimulatorsPage() {
     fields: BOILER_FIELDS,
   })
   const nothingMatches = terms.length > 0 && thermostat.count + boiler.count === 0
+  const searching = terms.length > 0
+
+  const coolPlugsOn = Array.from({ length: 10 }, (_, i) => values[`cp${i + 1}.en`]).filter((v) => v === true).length
 
   return (
     <div className="flex flex-col gap-6">
@@ -246,45 +285,151 @@ export default function SimulatorsPage() {
         </p>
       </div>
 
-      <SearchBox query={query} onChange={setQuery} matches={terms.length > 0 ? thermostat.count + boiler.count : null} />
-
-      {nothingMatches && <NoMatches query={query} onClear={() => setQuery("")} />}
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <SimulatorCard
-          title="Thermostat simulator"
-          subtitle="An OpenTherm master: asks, every interval"
+      <div role="tablist" aria-label="Simulator" className="flex overflow-x-auto border-b">
+        <TabButton
+          id="thermostat"
+          selected={tab === "thermostat"}
+          onSelect={setTab}
           icon={ThermometerIcon}
-          color="blue"
-          running={status?.thermostatSim.running}
-          partner={status?.thermostatSim.partner}
-          liveTitle="What the boiler reports (live)"
-          sections={thermostat}
-          searching={terms.length > 0}
-          sayWhenEmpty={!nothingMatches}
-          values={values}
-          onChange={change}
-          note="The thermostat simulator sends one request per interval, built from these settings, to whichever boiler it is connected to."
+          iconColor="text-blue-500"
+          label="Thermostat simulator"
+          state={simState(status?.thermostatSim.running)}
+          matches={searching ? thermostat.count : undefined}
         />
-        <SimulatorCard
-          title="Boiler simulator"
-          subtitle="An OpenTherm slave: answers every request"
+        <TabButton
+          id="boiler"
+          selected={tab === "boiler"}
+          onSelect={setTab}
           icon={FlameIcon}
-          color="orange"
-          running={status?.boilerSim.running}
-          partner={status?.boilerSim.partner}
-          liveTitle="What the thermostat asks (live)"
-          sections={boiler}
-          searching={terms.length > 0}
-          sayWhenEmpty={!nothingMatches}
-          values={values}
-          onChange={change}
-          note="The boiler simulator answers every request from the thermostat it is connected to with these settings; what it does not know it answers Unknown-DataId."
+          iconColor="text-orange-500"
+          label="Boiler simulator"
+          state={simState(status?.boilerSim.running)}
+          matches={searching ? boiler.count : undefined}
+        />
+        <TabButton
+          id="coolplug"
+          selected={tab === "coolplug"}
+          onSelect={setTab}
+          icon={AirVentIcon}
+          iconColor="text-orange-500"
+          label="CoolPlug simulators"
+          state={
+            values["cp1.en"] === undefined
+              ? { on: false, text: "…" }
+              : { on: coolPlugsOn > 0, text: coolPlugsOn > 0 ? `${coolPlugsOn} on the bus` : "None on the bus" }
+          }
         />
       </div>
 
-      <CoolPlugSimulators />
+      <div role="tabpanel" id={`sim-tab-${tab}`} aria-labelledby={`sim-tab-${tab}-button`} className="flex flex-col gap-6">
+        {tab === "coolplug" ? (
+          <CoolPlugSimulators values={values} onSetting={change} />
+        ) : (
+          <>
+            <SearchBox query={query} onChange={setQuery} matches={searching ? thermostat.count + boiler.count : null} />
+
+            {nothingMatches && <NoMatches query={query} onClear={() => setQuery("")} />}
+
+            {tab === "thermostat" ? (
+              <SimulatorCard
+                title="Thermostat simulator"
+                subtitle="An OpenTherm master: asks, every interval"
+                icon={ThermometerIcon}
+                color="blue"
+                running={status?.thermostatSim.running}
+                partner={status?.thermostatSim.partner}
+                liveTitle="What the boiler reports (live)"
+                sections={thermostat}
+                searching={searching}
+                sayWhenEmpty={!nothingMatches}
+                values={values}
+                onChange={change}
+                note="The thermostat simulator sends one request per interval, built from these settings, to whichever boiler it is connected to."
+              />
+            ) : (
+              <SimulatorCard
+                title="Boiler simulator"
+                subtitle="An OpenTherm slave: answers every request"
+                icon={FlameIcon}
+                color="orange"
+                running={status?.boilerSim.running}
+                partner={status?.boilerSim.partner}
+                liveTitle="What the thermostat asks (live)"
+                sections={boiler}
+                searching={searching}
+                sayWhenEmpty={!nothingMatches}
+                values={values}
+                onChange={change}
+                note="The boiler simulator answers every request from the thermostat it is connected to with these settings; what it does not know it answers Unknown-DataId."
+              />
+            )}
+          </>
+        )}
+      </div>
     </div>
+  )
+}
+
+// ── Tabs ────────────────────────────────────────────────────────
+
+interface TabState {
+  on: boolean
+  text: string
+}
+
+function simState(running?: boolean): TabState {
+  if (running === undefined) return { on: false, text: "…" }
+  return running ? { on: true, text: "Running" } : { on: false, text: "Not connected" }
+}
+
+function TabButton({
+  id,
+  selected,
+  onSelect,
+  icon: Icon,
+  iconColor,
+  label,
+  state,
+  matches,
+}: {
+  id: Tab
+  selected: boolean
+  onSelect: (tab: Tab) => void
+  icon: ComponentType<{ className?: string }>
+  iconColor: string
+  label: string
+  state: TabState
+  /** While searching: how many rows and settings in it match. */
+  matches?: number
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`sim-tab-${id}-button`}
+      aria-selected={selected}
+      aria-controls={`sim-tab-${id}`}
+      onClick={() => onSelect(id)}
+      className={`-mb-px flex shrink-0 items-center gap-3 border-b-2 px-4 py-2.5 text-left whitespace-nowrap transition-colors ${
+        selected ? "border-foreground" : "text-muted-foreground hover:text-foreground border-transparent"
+      }`}
+    >
+      <Icon className={`size-5 shrink-0 ${state.on ? iconColor : ""}`} />
+      <span className="flex flex-col">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {label}
+          {matches !== undefined && (
+            <span className={`rounded-full px-1.5 text-xs ${matches > 0 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"}`}>
+              {matches}
+            </span>
+          )}
+        </span>
+        <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-normal">
+          <span className={`size-1.5 rounded-full ${state.on ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+          {state.text}
+        </span>
+      </span>
+    </button>
   )
 }
 

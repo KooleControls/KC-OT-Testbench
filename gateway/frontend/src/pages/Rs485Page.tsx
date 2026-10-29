@@ -146,7 +146,11 @@ export default function Rs485Page() {
         </div>
       ) : (
         <p className="text-muted-foreground text-sm">
-          Nobody on the bus yet. Switch a CoolPlug simulator on under Simulators, or connect a gateway.
+          Nobody on the bus yet. Switch a CoolPlug simulator on under{" "}
+          <a href="#/simulators/coolplug" className="hover:text-foreground underline underline-offset-4">
+            Simulators
+          </a>
+          , or connect a gateway.
         </p>
       )}
 
