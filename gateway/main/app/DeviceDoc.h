@@ -31,7 +31,8 @@ namespace DeviceDoc {
 
 inline constexpr const char* DESCRIPTION =
     "KC-OT-Testbench - a KC1245 with a PCB1246 OpenTherm module, for testing "
-    "OpenTherm by simulating a thermostat and a boiler (work in progress).";
+    "OpenTherm by simulating a thermostat and a boiler, and Modbus gateways by "
+    "simulating CoolPlugs on RS485 (work in progress).";
 
 inline constexpr const char* INSTRUCTIONS =
     "This is the KC-OT-Testbench firmware, built on the Strux framework. It "
@@ -84,6 +85,20 @@ inline constexpr const char* INSTRUCTIONS =
     "the boiler simulator answers every request. Their behaviour is the settings "
     "tsim.* and bsim.*, read with every frame; `sim status` shows what each has heard "
     "from the other end.\n"
+    "\n"
+    "The RS485 bus and the CoolPlug simulators\n"
+    "  The board's RS485 port carries Modbus RTU, 8N1 at `rs485.baud` (9600, a "
+    "CoolPlug's default). The testbench is a slave there and never the master. "
+    "`rs485 frames after=<seq>` returns every frame on the bus - requests, replies and "
+    "noise, as hex, with who sent it - from a ring of the last 256; the web UI's RS485 "
+    "page decodes them. `rs485 send frame=\"01 03 00 61 00 01\"` puts a request on the "
+    "bus with the CRC added. Ten simulated CoolPlugs can answer there, each at its own "
+    "address, as a real one would (the CoolPlug PRM register map). `coolplug status` "
+    "reports them; `coolplug set unit=1 power=true mode=1 setpoint=215` changes an "
+    "indoor unit as its own remote would (setpoint in tenths of a degree), and "
+    "`coolplug filter unit=1 on=true` raises its filter sign. Whether a unit is on the "
+    "bus, its address, its room temperature and the faults to simulate are the "
+    "settings cp1.* to cp10.*, read again every second.\n"
     "\n"
     "Settings\n"
     "  `settings list` enumerates every setting on the device with its type and "

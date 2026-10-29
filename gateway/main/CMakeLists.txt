@@ -45,6 +45,8 @@ set(APP_SOURCES
     "app/RoutingManager/RoutingManager.cpp"
     "app/Simulators/ThermostatSimulator.cpp"
     "app/Simulators/BoilerSimulator.cpp"
+    "app/Simulators/CoolPlugSimulator.cpp"
+    "app/Rs485Manager/Rs485Manager.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -84,6 +86,7 @@ set(INCLUDE_DIRS_LIST
     "app/ModuleLinkManager"
     "app/RoutingManager"
     "app/Simulators"
+    "app/Rs485Manager"
 )
 
 set(COMPONENT_REQUIRES
