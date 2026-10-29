@@ -3,6 +3,7 @@ import {
   ActivityIcon,
   CableIcon,
   CpuIcon,
+  NetworkIcon,
   TerminalIcon,
   SquareTerminalIcon,
   SettingsIcon,
@@ -29,7 +30,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 
 // The nav, and the first entry is the product: the OpenTherm frames. "home" is a fixed
 // id rather than the feature's name, so a bookmark to "/" lands on the product's own
-// screen. The Strux template's LED demo has no page here; its commands are still in
+// screen. The RS485 bus is the second protocol's frames, so it stands next to them. The Strux template's LED demo has no page here; its commands are still in
 // Commands.
 //
 // There is no "Device" entry: a chip name and a heap figure are reference material
@@ -43,6 +44,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 // cheaper than finding it out by clicking.
 const navItems = [
   { title: "Frames", icon: ActivityIcon, page: "home" as const },
+  { title: "RS485", icon: NetworkIcon, page: "rs485" as const },
   { title: "Connections", icon: CableIcon, page: "connections" as const },
   { title: "Simulators", icon: CpuIcon, page: "simulators" as const },
   {

@@ -778,6 +778,39 @@ class BackendService {
     return this.send<RoutingState>("route set", { master, slave })
   }
 
+  // ── The RS485 bus and the simulated CoolPlugs ──────────────────
+
+  /** The Modbus frames on the RS485 bus after `after` (a seq), oldest first. */
+  async getBusFrames(after: number): Promise<BusFramesReply> {
+    return this.send<BusFramesReply>("rs485 frames", { after })
+  }
+
+  /** The bus's baud rate and counters. */
+  async getBusStatus(): Promise<BusStatus> {
+    return this.send<BusStatus>("rs485 status")
+  }
+
+  /** Put one request on the bus: hex bytes, unit first, without the CRC (the testbench
+   *  adds it and says which it was). */
+  async sendBusFrame(frame: string): Promise<{ ok: boolean; error?: string; crc?: string }> {
+    return this.send<{ ok: boolean; error?: string; crc?: string }>("rs485 send", { frame })
+  }
+
+  /** All ten simulated CoolPlugs. */
+  async getCoolPlugs(): Promise<CoolPlugStatus> {
+    return this.send<CoolPlugStatus>("coolplug status")
+  }
+
+  /** Change a simulated indoor unit as its remote would; omitted fields are left alone. */
+  async setCoolPlug(unit: number, change: CoolPlugChange): Promise<CoolPlugSetReply> {
+    return this.send<CoolPlugSetReply>("coolplug set", { unit, ...change })
+  }
+
+  /** Raise or clear a simulated indoor unit's filter sign. */
+  async setCoolPlugFilter(unit: number, on: boolean): Promise<CoolPlugSetReply> {
+    return this.send<CoolPlugSetReply>("coolplug filter", { unit, on })
+  }
+
   /** Turns the link indication on or off. Omitted fields are left alone by the
    *  device, so `{}` is a no-op that still reports the current state. */
   async setLed(params: { enabled?: boolean }): Promise<LedState> {
@@ -1189,6 +1222,97 @@ export interface ModuleLinkState {
   stream: boolean
   framesRecorded: number
   counters: Record<string, number>
+}
+
+// ── The RS485 bus (Rs485Manager) and the simulated CoolPlugs ─────────────────
+
+/** Who put a frame on the bus: someone else (the gateway, a real CoolPlug), a
+ *  simulated CoolPlug answering, or the testbench by hand. */
+export type BusSender = "bus" | "sim" | "testbench"
+
+/** Noise: bytes that made no frame. */
+export type BusFrameKind = "request" | "reply" | "noise"
+
+export interface BusFrame {
+  /** The testbench's numbering: from 1, gap-free, restarting with the testbench. */
+  seq: number
+  /** The testbench's clock (ms since boot) when it recorded the frame. */
+  ms: number
+  from: BusSender
+  kind: BusFrameKind
+  /** The whole frame's length; `hex` holds at most its first 64 bytes. */
+  len: number
+  hex: string
+}
+
+export interface BusFramesReply {
+  /** The newest seq the testbench holds. Below the cursor asked with: it restarted. */
+  latest: number
+  /** Frames after the cursor that had already left the testbench's ring. */
+  missed: number
+  baud: number
+  frames: BusFrame[]
+}
+
+export interface BusStatus {
+  baud: number
+  framesRecorded: number
+  counters: Record<string, number>
+}
+
+/** `coolplug status`, one unit. Mode, fan, swing and demand are the CoolPlug's numbers
+ *  (lib/modbus.ts names them); temperatures in °C. */
+export interface CoolPlugUnit {
+  /** 1-10: which simulator, not its Modbus address. */
+  unit: number
+  /** On the bus at all (cpN.en). */
+  enabled: boolean
+  /** Its Modbus address; 0 when the setting holds one no master can use. */
+  address: number
+  answers: boolean
+  indoor: boolean
+  delayMs: number
+  restarting: boolean
+  /** An address written over Modbus, taken at the next restart. */
+  pendingAddress?: number
+  serial: string
+  firmware: string
+  power: boolean
+  mode: number
+  setpoint: number
+  room: number
+  fan: number
+  swing: number
+  filter: boolean
+  failure: number
+  demand: number
+  ownAmbient: number
+  vautThreshold: number
+  lineRole: number
+  requests: number
+  writes: number
+  exceptions: number
+  lastRequestAgoMs?: number
+}
+
+export interface CoolPlugStatus {
+  baud: number
+  units: CoolPlugUnit[]
+}
+
+/** What the remote changes. The setpoint in tenths of a °C, as the register holds it. */
+export interface CoolPlugChange {
+  power?: boolean
+  mode?: number
+  setpoint?: number
+  fan?: number
+  swing?: number
+}
+
+export interface CoolPlugSetReply {
+  ok: boolean
+  error?: string
+  unit?: CoolPlugUnit
 }
 
 // ── The LED, this template's worked example ──────────────────────────────────

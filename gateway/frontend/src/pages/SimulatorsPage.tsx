@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { CoolPlugSimulators } from "@/components/CoolPlugSimulators"
 import { errorMessage } from "@/hooks/use-led"
 import { formatMemberId } from "@/hooks/use-opentherm"
 import { backend, type SettingEntry, type SimStatus } from "@/lib/backend"
@@ -13,7 +14,7 @@ import type { Endpoint } from "@/lib/routing"
 import { matchesSearch, searchTerms, type Searchable } from "@/lib/simSearch"
 
 /**
- * The two simulators that run on the testbench: a thermostat (an OpenTherm master)
+ * The simulators that run on the testbench. On OpenTherm, two: a thermostat (a master)
  * and a boiler (a slave). Which device each one talks to is chosen on the
  * Connections page; here is what they do. Their behaviour is a set of ordinary
  * settings (tsim.*, bsim.*) that the testbench reads with every frame, so a change
@@ -22,6 +23,9 @@ import { matchesSearch, searchTerms, type Searchable } from "@/lib/simSearch"
  * A simulator that is not connected is drawn in gray, but stays editable: setting it
  * up before connecting it is the usual order. The search narrows both simulators to
  * the settings and rows that match.
+ *
+ * Below them, the CoolPlugs simulated on the RS485 bus (components/CoolPlugSimulators),
+ * which the search leaves alone: ten units of the same few settings search poorly.
  */
 
 const STATUS_POLL_MS = 1000
@@ -237,8 +241,8 @@ export default function SimulatorsPage() {
       <div>
         <h1 className="text-3xl font-bold">Simulators</h1>
         <p className="text-muted-foreground mt-1">
-          The thermostat and boiler the testbench simulates. Connect them on the Connections page;
-          a setting here applies with the next frame.
+          The thermostat and boiler the testbench simulates on OpenTherm, and the CoolPlugs on RS485.
+          Connect the OpenTherm ones on the Connections page; a setting here applies with the next frame.
         </p>
       </div>
 
@@ -278,6 +282,8 @@ export default function SimulatorsPage() {
           note="The boiler simulator answers every request from the thermostat it is connected to with these settings; what it does not know it answers Unknown-DataId."
         />
       </div>
+
+      <CoolPlugSimulators />
     </div>
   )
 }
