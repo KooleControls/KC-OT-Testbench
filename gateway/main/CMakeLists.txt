@@ -45,7 +45,14 @@ set(APP_SOURCES
     "app/RoutingManager/RoutingManager.cpp"
     "app/Simulators/ThermostatSimulator.cpp"
     "app/Simulators/BoilerSimulator.cpp"
-    "app/Simulators/CoolPlugSimulator.cpp"
+    "app/Simulators/Hvac/HvacTypes.cpp"
+    "app/Simulators/Hvac/HvacSimulator.cpp"
+    "app/Simulators/Hvac/CoolPlugProfile.cpp"
+    "app/Simulators/Hvac/HisenseProfile.cpp"
+    "app/Simulators/Hvac/DaikinProfile.cpp"
+    "app/Simulators/Hvac/MitsubishiProfile.cpp"
+    "app/Simulators/Hvac/SamsungProfile.cpp"
+    "app/HvacSimManager/HvacSimManager.cpp"
     "app/Rs485Manager/Rs485Manager.cpp"
 )
 
@@ -86,6 +93,8 @@ set(INCLUDE_DIRS_LIST
     "app/ModuleLinkManager"
     "app/RoutingManager"
     "app/Simulators"
+    "app/Simulators/Hvac"
+    "app/HvacSimManager"
     "app/Rs485Manager"
 )
 

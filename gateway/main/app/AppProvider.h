@@ -16,6 +16,7 @@ class LedManager;
 class ModuleFirmwareManager;
 class ModuleLinkManager;
 class RoutingManager;
+class HvacSimManager;
 class Rs485Manager;
 
 class AppProvider
@@ -32,5 +33,6 @@ public:
     virtual ModuleFirmwareManager& getModuleFirmwareManager() = 0;
     virtual ModuleLinkManager& getModuleLinkManager() = 0;
     virtual RoutingManager& getRoutingManager() = 0;
+    virtual HvacSimManager& getHvacSimManager() = 0;
     virtual Rs485Manager& getRs485Manager() = 0;
 };

@@ -3,6 +3,7 @@
 #include "StruxProvider.h"
 #include "SettingsManager.h"
 #include "CommandManager.h"
+#include "HvacSimManager.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -101,31 +102,6 @@ constexpr CommandArg<const char*> frameArg{
              "added: '01 03 00 61 00 01' reads register 97 of unit 1. Spaces are allowed.",
     200 };
 
-constexpr CommandArg<uint32_t> unitArg{
-    "unit", "Which simulated CoolPlug: 1 to 10 (not its Modbus address)." };
-
-constexpr CommandArg<bool> powerArg{
-    "power", "Switch the indoor unit on (true) or off (false).", Presence::Optional };
-
-constexpr CommandArg<uint32_t> modeArg{
-    "mode", "0 cool, 1 heat, 2 auto, 3 dry, 4 heat aux, 5 fan.", Presence::Optional };
-
-constexpr CommandArg<uint32_t> setpointArg{
-    "setpoint", "The set temperature in tenths of a °C, as the register holds it: 225 is "
-                "22.5 °C. 100 to 350.",
-    Presence::Optional };
-
-constexpr CommandArg<uint32_t> fanArg{
-    "fan", "0 low, 1 medium, 2 high, 3 auto, 4 top, 5 very low.", Presence::Optional };
-
-constexpr CommandArg<uint32_t> swingArg{
-    "swing", "The louvres: 0 vertical, 1 30°, 2 45°, 3 60°, 4 horizontal, 5 auto, 6 off, "
-             "7 no louvres.",
-    Presence::Optional };
-
-constexpr CommandArg<bool> filterArg{
-    "on", "Raise the filter sign (true) or clear it (false)." };
-
 } // namespace
 
 // ── Commands ─────────────────────────────────────────────────
@@ -133,7 +109,7 @@ constexpr CommandArg<bool> filterArg{
 CommandEntry Rs485Manager::statusCommand_{
     "rs485 status", &InvokeCommand<&Rs485Manager::Cmd_Status>,
     "Report the RS485 bus: its baud rate, and counters since boot of the frames heard, "
-    "answered by the simulated CoolPlugs, and sent by hand."
+    "answered by the simulated HVAC units, and sent by hand."
 };
 
 CommandEntry Rs485Manager::framesCommand_{
@@ -150,28 +126,6 @@ CommandEntry Rs485Manager::sendCommand_{
     "Its reply is in 'rs485 frames'. A unit simulated here answers it as it would the "
     "gateway.",
     { &frameArg }
-};
-
-CommandEntry Rs485Manager::coolPlugStatusCommand_{
-    "coolplug status", &InvokeCommand<&Rs485Manager::Cmd_CoolPlugStatus>,
-    "Report the ten simulated CoolPlugs: whether each is on the bus and at which "
-    "address, its indoor unit's state, and what the gateway asked of it. Their "
-    "simulation settings are cp1.* to cp10.*, which apply within a second."
-};
-
-CommandEntry Rs485Manager::coolPlugSetCommand_{
-    "coolplug set", &InvokeCommand<&Rs485Manager::Cmd_CoolPlugSet>,
-    "Change a simulated indoor unit as its own remote would: power, mode, setpoint, fan "
-    "and louvres. The gateway reads the change at its next poll, and can overwrite it. "
-    "Not saved: every unit starts the same after a reboot.",
-    { &unitArg, &powerArg, &modeArg, &setpointArg, &fanArg, &swingArg }
-};
-
-CommandEntry Rs485Manager::coolPlugFilterCommand_{
-    "coolplug filter", &InvokeCommand<&Rs485Manager::Cmd_CoolPlugFilter>,
-    "Raise or clear a simulated indoor unit's filter sign, as the unit does when its "
-    "filter needs cleaning. The gateway can clear it too.",
-    { &unitArg, &filterArg }
 };
 
 Rs485Manager::Rs485Manager(AppProvider& app)
@@ -191,13 +145,7 @@ void Rs485Manager::Init()
     StruxProvider& strux = app_.getStrux();
     SettingsManager& settings = strux.getSettingsManager();
     settings.Register({ &baudSetting_ });
-    CoolPlugSimulator::RegisterSettings(settings);
-    for (uint8_t i = 0; i < CoolPlugSimulator::UNITS; ++i)
-        units_[i].Init(i, settings);
-
-    strux.getCommandManager().Register(this, { &statusCommand_, &framesCommand_, &sendCommand_,
-                                               &coolPlugStatusCommand_, &coolPlugSetCommand_,
-                                               &coolPlugFilterCommand_ });
+    strux.getCommandManager().Register(this, { &statusCommand_, &framesCommand_, &sendCommand_ });
 
     ring_ = static_cast<BusFrame*>(heap_caps_calloc(RING, sizeof(BusFrame), MALLOC_CAP_SPIRAM));
     if (ring_ == nullptr)
@@ -251,8 +199,6 @@ void Rs485Manager::TaskLoop()
             Await(false);
         if (Due(now, nextRefreshMs_))
             Refresh(now);
-        for (CoolPlugSimulator& unit : units_)
-            unit.Tick(now);
         SendQueued(now);
     }
 }
@@ -260,9 +206,6 @@ void Rs485Manager::TaskLoop()
 void Rs485Manager::Refresh(uint32_t nowMs)
 {
     nextRefreshMs_ = nowMs + REFRESH_MS;
-    for (CoolPlugSimulator& unit : units_)
-        unit.Refresh();
-
     uint32_t baud = baudSetting_.Get();
     if (baud < MIN_BAUD || baud > MAX_BAUD)
         baud = DEFAULT_BAUD;
@@ -304,19 +247,17 @@ void Rs485Manager::Await(bool active, uint8_t unit, uint32_t nowMs)
 
 void Rs485Manager::Dispatch(const uint8_t* adu, size_t len, uint32_t nowMs)
 {
+    HvacSimManager& sims = app_.getHvacSimManager();
     const uint8_t address = adu[0];
     if (address == BROADCAST)
     {
         // Every unit that is up carries it out; none answers.
-        uint8_t reply[MAX_PDU];
-        for (CoolPlugSimulator& unit : units_)
-            if (unit.Serves(BROADCAST, nowMs) && unit.Answers())
-                unit.Handle(adu + 1, len - 3, true, reply, nowMs);
+        sims.Broadcast(HvacTransport::ModbusRtu, adu + 1, len - 3, nowMs);
         Await(false);
         return;
     }
 
-    if (CoolPlugSimulator* unit = UnitAt(address, nowMs))
+    if (HvacSimulator* unit = sims.Find(HvacTransport::ModbusRtu, address))
     {
         Await(false);
         Answer(*unit, adu, len, nowMs);
@@ -326,16 +267,7 @@ void Rs485Manager::Dispatch(const uint8_t* adu, size_t len, uint32_t nowMs)
     Await(true, address, nowMs);
 }
 
-CoolPlugSimulator* Rs485Manager::UnitAt(uint8_t address, uint32_t nowMs)
-{
-    // Two units at one address is a test setup mistake; the first one has it.
-    for (CoolPlugSimulator& unit : units_)
-        if (unit.Serves(address, nowMs))
-            return &unit;
-    return nullptr;
-}
-
-void Rs485Manager::Answer(CoolPlugSimulator& unit, const uint8_t* adu, size_t len, uint32_t nowMs)
+void Rs485Manager::Answer(HvacSimulator& unit, const uint8_t* adu, size_t len, uint32_t nowMs)
 {
     // A unit that does not answer does nothing at all, as a dead one would.
     if (!unit.Answers())
@@ -520,62 +452,5 @@ CommandResult Rs485Manager::Cmd_Send(CommandContext& ctx)
     ToHex(out->bytes + n, 2, crc);
     resp.field("ok", true);
     resp.field("crc", crc);
-    return CommandResult::Ok;
-}
-
-CommandResult Rs485Manager::Cmd_CoolPlugStatus(CommandContext& ctx)
-{
-    const uint32_t now = NowMs();
-    auto resp = ctx.reply.object();
-    resp.field("baud", baud_.load());
-    auto list = resp.array("units");
-    for (CoolPlugSimulator& unit : units_)
-    {
-        auto o = list.object();
-        unit.Report(o, now);
-    }
-    return CommandResult::Ok;
-}
-
-CommandResult Rs485Manager::Cmd_CoolPlugSet(CommandContext& ctx)
-{
-    CoolPlugSimulator::Change change;
-    if (ctx.has(powerArg))    change.power = ctx.arg(powerArg) ? 1 : 0;
-    if (ctx.has(modeArg))     change.mode = static_cast<int32_t>(std::min<uint32_t>(ctx.arg(modeArg), INT32_MAX));
-    if (ctx.has(setpointArg)) change.setpoint = static_cast<int32_t>(std::min<uint32_t>(ctx.arg(setpointArg), INT32_MAX));
-    if (ctx.has(fanArg))      change.fan = static_cast<int32_t>(std::min<uint32_t>(ctx.arg(fanArg), INT32_MAX));
-    if (ctx.has(swingArg))    change.swing = static_cast<int32_t>(std::min<uint32_t>(ctx.arg(swingArg), INT32_MAX));
-    return ApplyToUnit(ctx, ctx.arg(unitArg), change);
-}
-
-CommandResult Rs485Manager::Cmd_CoolPlugFilter(CommandContext& ctx)
-{
-    CoolPlugSimulator::Change change;
-    change.filter = ctx.arg(filterArg) ? 1 : 0;
-    return ApplyToUnit(ctx, ctx.arg(unitArg), change);
-}
-
-CommandResult Rs485Manager::ApplyToUnit(CommandContext& ctx, uint32_t unit, const CoolPlugSimulator::Change& change)
-{
-    auto resp = ctx.reply.object();
-    if (unit < 1 || unit > CoolPlugSimulator::UNITS)
-    {
-        resp.field("ok", false);
-        resp.field("error", "no such unit: 1 to 10");
-        return CommandResult::Ok;
-    }
-
-    const char* error = nullptr;
-    CoolPlugSimulator& sim = units_[unit - 1];
-    if (!sim.Apply(change, error))
-    {
-        resp.field("ok", false);
-        resp.field("error", error);
-        return CommandResult::Ok;
-    }
-
-    resp.field("ok", true);
-    auto o = resp.object("unit");
-    sim.Report(o, NowMs());
     return CommandResult::Ok;
 }

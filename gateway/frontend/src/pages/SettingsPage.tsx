@@ -53,9 +53,9 @@ const UI_GROUPS: { id: string; label: string; prefixes: string[] }[] = [
   { id: "telemetry", label: "Telemetry & Time", prefixes: ["telem", "ntp"] },
   { id: "network", label: "Network", prefixes: ["wifi", "net"] },
   {
-    id: "coolplug",
-    label: "RS485 & CoolPlug simulators",
-    prefixes: ["rs485", ...Array.from({ length: 10 }, (_, i) => `cp${i + 1}`)],
+    id: "hvac",
+    label: "RS485 & HVAC simulators",
+    prefixes: ["rs485", ...Array.from({ length: 10 }, (_, i) => `hvac${i + 1}`)],
   },
 ]
 

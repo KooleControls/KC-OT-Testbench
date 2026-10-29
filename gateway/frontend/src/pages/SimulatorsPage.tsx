@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { CoolPlugSimulators } from "@/components/CoolPlugSimulators"
+import { HvacSimulators } from "@/components/HvacSimulators"
 import { errorMessage } from "@/hooks/use-led"
 import { formatMemberId } from "@/hooks/use-opentherm"
 import { backend, type SettingEntry, type SimStatus } from "@/lib/backend"
+import { hvacType } from "@/lib/hvac"
 import type { Endpoint } from "@/lib/routing"
 import { matchesSearch, searchTerms, type Searchable } from "@/lib/simSearch"
 
@@ -24,17 +25,17 @@ import { matchesSearch, searchTerms, type Searchable } from "@/lib/simSearch"
  * up before connecting it is the usual order. The search narrows both simulators to
  * the settings and rows that match, and each tab says how many.
  *
- * The third tab holds the CoolPlugs simulated on the RS485 bus
- * (components/CoolPlugSimulators), which the search leaves alone: ten units of the
- * same few settings search poorly.
+ * The third tab holds the HVAC units simulated on the RS485 bus, set up as the
+ * gateway's HVAC list is (components/HvacSimulators), which the search leaves alone:
+ * ten units of the same few settings search poorly.
  */
 
 const STATUS_POLL_MS = 1000
 
-const TABS = ["thermostat", "boiler", "coolplug"] as const
+const TABS = ["thermostat", "boiler", "hvac"] as const
 type Tab = (typeof TABS)[number]
 
-// The open tab is the hash's second part (#/simulators/coolplug), so a link opens it
+// The open tab is the hash's second part (#/simulators/hvac), so a link opens it
 // and F5 keeps it. Without one, the tab open last time the page was shown.
 let lastTab: Tab = "thermostat"
 
@@ -273,14 +274,16 @@ export default function SimulatorsPage() {
   const nothingMatches = terms.length > 0 && thermostat.count + boiler.count === 0
   const searching = terms.length > 0
 
-  const coolPlugsOn = Array.from({ length: 10 }, (_, i) => values[`cp${i + 1}.en`]).filter((v) => v === true).length
+  const hvacSimulated = Array.from({ length: 10 }, (_, i) => values[`hvac${i + 1}.type`]).filter(
+    (v) => v !== undefined && hvacType(Number(v))?.simulated,
+  ).length
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-3xl font-bold">Simulators</h1>
         <p className="text-muted-foreground mt-1">
-          The thermostat and boiler the testbench simulates on OpenTherm, and the CoolPlugs on RS485.
+          The thermostat and boiler the testbench simulates on OpenTherm, and the HVAC units on RS485.
           Connect the OpenTherm ones on the Connections page; a setting here applies with the next frame.
         </p>
       </div>
@@ -307,23 +310,23 @@ export default function SimulatorsPage() {
           matches={searching ? boiler.count : undefined}
         />
         <TabButton
-          id="coolplug"
-          selected={tab === "coolplug"}
+          id="hvac"
+          selected={tab === "hvac"}
           onSelect={setTab}
           icon={AirVentIcon}
           iconColor="text-orange-500"
-          label="CoolPlug simulators"
+          label="HVAC simulators"
           state={
-            values["cp1.en"] === undefined
+            values["hvac1.type"] === undefined
               ? { on: false, text: "…" }
-              : { on: coolPlugsOn > 0, text: coolPlugsOn > 0 ? `${coolPlugsOn} on the bus` : "None on the bus" }
+              : { on: hvacSimulated > 0, text: hvacSimulated > 0 ? `${hvacSimulated} simulated` : "None set up" }
           }
         />
       </div>
 
       <div role="tabpanel" id={`sim-tab-${tab}`} aria-labelledby={`sim-tab-${tab}-button`} className="flex flex-col gap-6">
-        {tab === "coolplug" ? (
-          <CoolPlugSimulators values={values} onSetting={change} />
+        {tab === "hvac" ? (
+          <HvacSimulators values={values} onSetting={change} />
         ) : (
           <>
             <SearchBox query={query} onChange={setQuery} matches={searching ? thermostat.count + boiler.count : null} />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AirVentIcon, PauseIcon, PlayIcon, SendIcon, TrashIcon } from "lucide-react"
 import { toast } from "sonner"
 
@@ -14,24 +14,26 @@ import {
   ANSWERED_WITHIN_MS,
   summariseUnits,
   useBusFrames,
-  useCoolPlugs,
+  useHvacSims,
   type BusRow,
   type UnitSummary,
 } from "@/hooks/use-rs485"
-import { backend, type BusStatus, type CoolPlugUnit } from "@/lib/backend"
-import { COOLPLUG_REGISTERS, MODES, bytesToHex, hexToBytes, withCrc } from "@/lib/modbus"
+import { backend, type BusStatus, type HvacSimSlot, type HvacSimUnit } from "@/lib/backend"
+import { hvacType } from "@/lib/hvac"
+import { TABLE_SHORT, bytesToHex, decodeFrame, hexToBytes, tableOf, withCrc, type RegisterMap } from "@/lib/modbus"
 
 /**
  * The Modbus RTU traffic on the testbench's RS485 port, as it happens.
  *
  * On top, one card per Modbus address on the bus: every address a master asked, and
- * every simulated CoolPlug that is switched on, whether it was asked yet or not. Below
- * that, every frame on the bus, newest first, decoded for reading with the CoolPlug's
- * register names (lib/modbus.ts). The testbench only listens and answers for its
- * simulated CoolPlugs; the master is whoever is on the other end, usually a gateway.
+ * every simulated HVAC unit, whether it was asked yet or not. Below that, every frame
+ * on the bus, newest first, decoded for reading (lib/modbus.ts) with the register names
+ * of the type simulated at its address (lib/hvac.ts); a unit the testbench does not
+ * play reads as plain numbers. The testbench only listens and answers for its
+ * simulated units; the master is whoever is on the other end, usually a gateway.
  *
  * At the bottom, a request composer: put one request on the bus with `rs485 send`, to
- * a real CoolPlug or to one of the testbench's own.
+ * a real unit or to one of the testbench's own.
  */
 
 type KindFilter = "all" | "requests" | "replies" | "exceptions" | "noise"
@@ -60,19 +62,30 @@ function matchesKind(r: BusRow, filter: KindFilter): boolean {
   }
 }
 
-/** Who sent a frame, as the table shows it. On a CoolPlug bus the master is the gateway. */
+/** Who sent a frame, as the table shows it. On an HVAC bus the master is the gateway. */
 function sender(r: BusRow): { title: string; dot: string } {
   if (r.kind === "noise") return { title: "Noise", dot: "bg-red-400" }
   if (r.from === "testbench") return { title: "Testbench", dot: "bg-muted-foreground" }
-  if (r.from === "sim") return { title: "CoolPlug simulator", dot: "bg-orange-300" }
+  if (r.from === "sim") return { title: "HVAC simulator", dot: "bg-orange-300" }
   return r.kind === "request"
     ? { title: "Gateway", dot: "bg-blue-500" }
-    : { title: "CoolPlug", dot: "bg-orange-500" }
+    : { title: "Unit", dot: "bg-orange-500" }
+}
+
+const isSimulated = (u: HvacSimSlot): u is HvacSimUnit => u.simulated
+
+/** The simulated unit that answers at `address`, if any: the first, as on the testbench. */
+function simAt(sims: readonly HvacSimUnit[], address: number | null): HvacSimUnit | undefined {
+  return address === null ? undefined : sims.find((s) => s.address === address && s.address > 0)
 }
 
 export default function Rs485Page() {
   const { rows, missed, status, error, clear } = useBusFrames()
-  const { units: plugs } = useCoolPlugs(3000)
+  const { units } = useHvacSims(3000)
+  const sims = useMemo(() => (units ?? []).filter(isSimulated), [units])
+  // The register names of the type simulated at an address, as it is now: frames from
+  // before the units were known, or from the ring's backlog, are named all the same.
+  const mapFor = useCallback((address: number) => hvacType(simAt(sims, address)?.type)?.registers, [sims])
   const [paused, setPaused] = useState<BusRow[] | null>(null)
   const [unitFilter, setUnitFilter] = useState<UnitFilter>("all")
   const [kindFilter, setKindFilter] = useState<KindFilter>("all")
@@ -94,9 +107,9 @@ export default function Rs485Page() {
   const summaries = useMemo(() => summariseUnits(rows), [rows])
   const addresses = useMemo(() => {
     const all = new Set(summaries.keys())
-    for (const p of plugs ?? []) if (p.enabled && p.address > 0) all.add(p.address)
+    for (const u of sims) if (u.address > 0) all.add(u.address)
     return [...all].sort((a, b) => a - b)
-  }, [summaries, plugs])
+  }, [summaries, sims])
 
   // Newest is on top, so following the traffic means staying at the top.
   const scroller = useRef<HTMLDivElement>(null)
@@ -137,7 +150,7 @@ export default function Rs485Page() {
               key={a}
               address={a}
               summary={summaries.get(a)}
-              plug={plugs?.find((p) => p.enabled && p.address === a)}
+              sim={simAt(sims, a)}
               now={now}
               selected={unitFilter === a}
               onSelect={() => setUnitFilter((f) => (f === a ? "all" : a))}
@@ -146,8 +159,8 @@ export default function Rs485Page() {
         </div>
       ) : (
         <p className="text-muted-foreground text-sm">
-          Nobody on the bus yet. Switch a CoolPlug simulator on under{" "}
-          <a href="#/simulators/coolplug" className="hover:text-foreground underline underline-offset-4">
+          Nobody on the bus yet. Give an HVAC simulator a type under{" "}
+          <a href="#/simulators/hvac" className="hover:text-foreground underline underline-offset-4">
             Simulators
           </a>
           , or connect a gateway.
@@ -218,7 +231,7 @@ export default function Rs485Page() {
             </thead>
             <tbody>
               {visible.map((r) => (
-                <FrameRowView key={r.seq + ":" + r.ms} row={r} />
+                <FrameRowView key={r.seq + ":" + r.ms} row={r} map={r.decoded && mapFor(r.decoded.unit)} />
               ))}
               {visible.length === 0 && (
                 <tr>
@@ -232,7 +245,7 @@ export default function Rs485Page() {
         </div>
       </Card>
 
-      <Composer plugs={plugs} />
+      <Composer sims={sims} />
     </div>
   )
 }
@@ -240,14 +253,14 @@ export default function Rs485Page() {
 function UnitCard({
   address,
   summary,
-  plug,
+  sim,
   now,
   selected,
   onSelect,
 }: {
   address: number
   summary?: UnitSummary
-  plug?: CoolPlugUnit
+  sim?: HvacSimUnit
   now: number
   selected: boolean
   onSelect: () => void
@@ -264,9 +277,14 @@ function UnitCard({
       ? ["bg-amber-500", "Not answering"]
       : ["bg-muted-foreground/40", "Not asked"]
 
-  const who = plug ? `Simulator ${plug.unit}` : summary?.replies ? "CoolPlug on the bus" : "Unknown"
-  const details = plug
-    ? [plug.power ? "On" : "Off", MODES[plug.mode] ?? "?", `${plug.setpoint.toFixed(1)} °C`]
+  const type = hvacType(sim?.type)
+  const who = sim ? `Sim unit ${sim.unit} · ${type?.code ?? "?"}` : summary?.replies ? "A unit on the bus" : "Unknown"
+  const details = sim
+    ? [
+        sim.power ? "On" : "Off",
+        type?.modes.find((m) => m.value === sim.mode)?.label ?? `mode ${sim.mode}`,
+        `${sim.setpoint.toFixed(1)} °C`,
+      ]
     : []
 
   return (
@@ -275,10 +293,10 @@ function UnitCard({
       onClick={onSelect}
       className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
         selected ? "border-blue-400 ring-2 ring-blue-200 dark:ring-blue-900" : "hover:bg-muted/50"
-      } ${plug ? "border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/30" : ""}`}
+      } ${sim ? "border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/30" : ""}`}
     >
       <div className="bg-background flex size-10 shrink-0 items-center justify-center rounded-lg border shadow-sm">
-        <AirVentIcon className={`size-5 ${plug ? "text-orange-500" : "text-muted-foreground"}`} />
+        <AirVentIcon className={`size-5 ${sim ? "text-orange-500" : "text-muted-foreground"}`} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -304,9 +322,14 @@ function UnitCard({
   )
 }
 
-function FrameRowView({ row }: { row: BusRow }) {
+function FrameRowView({ row, map }: { row: BusRow; map?: RegisterMap }) {
   const s = sender(row)
-  const d = row.decoded
+  // Named with the map of the unit at its address; a type's map is one object, so this
+  // only reads the frame again when the unit there changes type.
+  const d = useMemo(
+    () => (map && row.decoded && row.kind !== "noise" ? decodeFrame(row.bytes, row.kind, row.len, row.request, map) : row.decoded),
+    [row, map],
+  )
   return (
     <tr className={`border-b last:border-0 ${row.from === "testbench" ? "bg-muted/40" : ""}`}>
       <Td className="text-muted-foreground font-mono">{(row.ms / 1000).toFixed(3)}</Td>
@@ -352,17 +375,24 @@ function functionPill(row: BusRow): string {
 
 // ── Composer ─────────────────────────────────────────────────────
 
-type ComposeFunction = "read" | "write" | "deviceId" | "raw"
+/** What the composer builds: a function code, or a frame typed as hex (RAW). */
+const RAW = -1
 
-const REGISTER_OPTIONS = Object.entries(COOLPLUG_REGISTERS).map(([address, info]) => ({
-  address: Number(address),
-  name: info.name,
-}))
+const COMPOSE_FUNCTIONS = [
+  { fc: 0x01, label: "01 Read coils" },
+  { fc: 0x02, label: "02 Read discrete inputs" },
+  { fc: 0x03, label: "03 Read holding registers" },
+  { fc: 0x04, label: "04 Read input registers" },
+  { fc: 0x05, label: "05 Write single coil" },
+  { fc: 0x06, label: "06 Write single register" },
+  { fc: 0x2b, label: "2B Read device identification" },
+  { fc: RAW, label: "Raw frame (hex)" },
+]
 
-function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
-  const [fn, setFn] = useState<ComposeFunction>("read")
+function Composer({ sims }: { sims: readonly HvacSimUnit[] }) {
+  const [fn, setFn] = useState(0x03)
   const [unit, setUnit] = useState("1")
-  const [register, setRegister] = useState("145")
+  const [register, setRegister] = useState("0")
   const [amount, setAmount] = useState("1")
   const [raw, setRaw] = useState("")
   const [busy, setBusy] = useState(false)
@@ -370,23 +400,35 @@ function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
   const u = parseNumber(unit)
   const reg = parseNumber(register)
   const n = parseNumber(amount)
+  const reading = fn >= 0x01 && fn <= 0x04
   const unitValid = u !== null && u <= 247
   const regValid = reg !== null && reg <= 0xffff
-  const amountValid = n !== null && (fn === "read" ? n >= 1 && n <= 125 : n <= 0xffff)
+  const amountValid =
+    n !== null && (reading ? n >= 1 && n <= (fn <= 0x02 ? 2000 : 125) : fn === 0x05 ? n <= 1 : n <= 0xffff)
 
   // The frame without its CRC, or null while the fields do not make one.
   const compose = (): number[] | null => {
-    if (fn === "raw") {
+    if (fn === RAW) {
       const b = hexToBytes(raw)
       return b !== null && b.length >= 2 ? b : null
     }
     if (u === null || !unitValid) return null
-    if (fn === "deviceId") return [u, 0x2b, 0x0e, 0x01, 0x00]
+    if (fn === 0x2b) return [u, 0x2b, 0x0e, 0x01, 0x00]
     if (reg === null || n === null || !regValid || !amountValid) return null
-    return [u, fn === "read" ? 0x03 : 0x06, reg >> 8, reg & 0xff, n >> 8, n & 0xff]
+    // A coil is written as FF00 (on) or 0000 (off), and nothing else.
+    const value = fn === 0x05 ? (n ? 0xff00 : 0) : n
+    return [u, fn, reg >> 8, reg & 0xff, value >> 8, value & 0xff]
   }
   const bytes = compose()
-  const simulated = bytes ? plugs?.find((p) => p.enabled && p.address === bytes[0]) : undefined
+
+  // The unit simulated at that address, and what its type calls the registers.
+  const sim = simAt(sims, bytes ? bytes[0] : u)
+  const type = hvacType(sim?.type)
+  const table = tableOf(fn)
+  const points = table ? (type?.registers[table] ?? {}) : {}
+  const regHint = !regValid
+    ? "0 - 65535"
+    : (points[reg]?.name ?? (type && table ? `Not a ${type.name} ${TABLE_SHORT[table]}` : "0 - 65535"))
 
   const send = () => {
     if (bytes === null) return
@@ -410,16 +452,17 @@ function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
             id="rs485-fn"
             className={`${selectClass} w-60`}
             value={fn}
-            onChange={(e) => setFn(e.target.value as ComposeFunction)}
+            onChange={(e) => setFn(Number(e.target.value))}
           >
-            <option value="read">03 Read holding registers</option>
-            <option value="write">06 Write single register</option>
-            <option value="deviceId">2B Read device identification</option>
-            <option value="raw">Raw frame (hex)</option>
+            {COMPOSE_FUNCTIONS.map((f) => (
+              <option key={f.fc} value={f.fc}>
+                {f.label}
+              </option>
+            ))}
           </select>
         </Field>
 
-        {fn === "raw" ? (
+        {fn === RAW ? (
           <Field label="Frame, without the CRC" htmlFor="rs485-raw" hint="Unit first, e.g. 01 03 00 91 00 01">
             <Input
               id="rs485-raw"
@@ -434,7 +477,7 @@ function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
             <Field
               label="Unit (Modbus address)"
               htmlFor="rs485-unit"
-              hint={simulated ? `Simulator ${simulated.unit} answers` : "1 - 247"}
+              hint={sim ? `Sim unit ${sim.unit} (${type?.code ?? "?"}) answers` : "1 - 247"}
             >
               <Input
                 id="rs485-unit"
@@ -444,13 +487,9 @@ function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
                 aria-invalid={!unitValid}
               />
             </Field>
-            {fn !== "deviceId" && (
+            {fn !== 0x2b && (
               <>
-                <Field
-                  label="Register (wire address)"
-                  htmlFor="rs485-reg"
-                  hint={regValid ? (COOLPLUG_REGISTERS[reg]?.name ?? "Not a CoolPlug register") : "0 - 65535"}
-                >
+                <Field label={`${table ? TABLE_SHORT[table] : "Register"} (wire address)`} htmlFor="rs485-reg" hint={regHint}>
                   <Input
                     id="rs485-reg"
                     className="w-48"
@@ -460,17 +499,25 @@ function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
                     aria-invalid={!regValid}
                   />
                   <datalist id="rs485-registers">
-                    {REGISTER_OPTIONS.map((o) => (
-                      <option key={o.address} value={o.address}>
-                        {o.name}
+                    {Object.entries(points).map(([address, info]) => (
+                      <option key={address} value={address}>
+                        {info.name}
                       </option>
                     ))}
                   </datalist>
                 </Field>
                 <Field
-                  label={fn === "read" ? "Count" : "Value"}
+                  label={reading ? "Count" : "Value"}
                   htmlFor="rs485-amount"
-                  hint={fn === "read" ? "1 - 125 registers" : "Temperatures in tenths: 215 is 21.5 °C"}
+                  hint={
+                    reading
+                      ? fn <= 0x02
+                        ? "1 - 2000 points"
+                        : "1 - 125 registers"
+                      : fn === 0x05
+                        ? "1 on, 0 off"
+                        : "As the register holds it: most setpoints in tenths, 215 is 21.5 °C"
+                  }
                 >
                   <Input
                     id="rs485-amount"
@@ -491,7 +538,7 @@ function Composer({ plugs }: { plugs: CoolPlugUnit[] | null }) {
             Send request
           </Button>
           <span className="text-muted-foreground font-mono text-xs">
-            {bytes ? bytesToHex(withCrc(bytes)) : " "}
+            {bytes ? bytesToHex(withCrc(bytes)) : " "}
           </span>
         </div>
       </div>

@@ -778,7 +778,7 @@ class BackendService {
     return this.send<RoutingState>("route set", { master, slave })
   }
 
-  // ── The RS485 bus and the simulated CoolPlugs ──────────────────
+  // ── The RS485 bus and the simulated HVAC units ─────────────────
 
   /** The Modbus frames on the RS485 bus after `after` (a seq), oldest first. */
   async getBusFrames(after: number): Promise<BusFramesReply> {
@@ -796,19 +796,19 @@ class BackendService {
     return this.send<{ ok: boolean; error?: string; crc?: string }>("rs485 send", { frame })
   }
 
-  /** All ten simulated CoolPlugs. */
-  async getCoolPlugs(): Promise<CoolPlugStatus> {
-    return this.send<CoolPlugStatus>("coolplug status")
+  /** All ten simulated HVAC units. */
+  async getHvacSims(): Promise<HvacSimStatus> {
+    return this.send<HvacSimStatus>("hvac status")
   }
 
   /** Change a simulated indoor unit as its remote would; omitted fields are left alone. */
-  async setCoolPlug(unit: number, change: CoolPlugChange): Promise<CoolPlugSetReply> {
-    return this.send<CoolPlugSetReply>("coolplug set", { unit, ...change })
+  async setHvacSim(unit: number, change: HvacSimChange): Promise<HvacSimSetReply> {
+    return this.send<HvacSimSetReply>("hvac set", { unit, ...change })
   }
 
-  /** Raise or clear a simulated indoor unit's filter sign. */
-  async setCoolPlugFilter(unit: number, on: boolean): Promise<CoolPlugSetReply> {
-    return this.send<CoolPlugSetReply>("coolplug filter", { unit, on })
+  /** Raise or clear a simulated indoor unit's filter sign (a type that has one). */
+  async setHvacSimFilter(unit: number, on: boolean): Promise<HvacSimSetReply> {
+    return this.send<HvacSimSetReply>("hvac filter", { unit, on })
   }
 
   /** Turns the link indication on or off. Omitted fields are left alone by the
@@ -1224,10 +1224,10 @@ export interface ModuleLinkState {
   counters: Record<string, number>
 }
 
-// ── The RS485 bus (Rs485Manager) and the simulated CoolPlugs ─────────────────
+// ── The RS485 bus (Rs485Manager) and the simulated HVAC units (HvacSimManager) ─
 
-/** Who put a frame on the bus: someone else (the gateway, a real CoolPlug), a
- *  simulated CoolPlug answering, or the testbench by hand. */
+/** Who put a frame on the bus: someone else (the gateway, a real unit), a simulated
+ *  unit answering, or the testbench by hand. */
 export type BusSender = "bus" | "sim" | "testbench"
 
 /** Noise: bytes that made no frame. */
@@ -1260,48 +1260,76 @@ export interface BusStatus {
   counters: Record<string, number>
 }
 
-/** `coolplug status`, one unit. Mode, fan, swing and demand are the CoolPlug's numbers
- *  (lib/modbus.ts names them); temperatures in °C. */
-export interface CoolPlugUnit {
-  /** 1-10: which simulator, not its Modbus address. */
+/** `hvac status`, a unit without a type the testbench plays: unused (0), or one it
+ *  does not simulate (OpenTherm, relay, CoolMasterNet). */
+export interface HvacSimIdle {
+  /** 1-10: which simulator, as in the gateway's HVAC list; not its Modbus address. */
   unit: number
-  /** On the bus at all (cpN.en). */
-  enabled: boolean
+  /** The gateway's type number (lib/hvac.ts names it). */
+  type: number
+  simulated: false
+}
+
+/** One register as the bus would answer it now: its table (coils, discrete inputs,
+ *  holding or input registers), its wire address and its value. */
+export interface HvacPoint {
+  t: "c" | "d" | "h" | "i"
+  a: number
+  v: number
+}
+
+/** `hvac status`, a simulated unit. Mode, fan and swing are the type's own codes, as
+ *  its control registers take them; temperatures in °C. */
+export interface HvacSimUnit {
+  unit: number
+  type: number
+  simulated: true
   /** Its Modbus address; 0 when the setting holds one no master can use. */
   address: number
+  /** On the bus (hvacN.answer): answering requests at all. */
   answers: boolean
-  indoor: boolean
   delayMs: number
   restarting: boolean
-  /** An address written over Modbus, taken at the next restart. */
+  /** An address written over Modbus, taken at the next restart (a CoolPlug). */
   pendingAddress?: number
-  serial: string
-  firmware: string
+  /** Whether it reaches its indoor unit; only a type that reports it (the CoolPlug). */
+  indoor?: boolean
   power: boolean
   mode: number
   setpoint: number
+  /** The simulated room, whether or not the type reports it. */
   room: number
   fan: number
   swing: number
-  filter: boolean
+  /** Only a type with a filter sign. */
+  filter?: boolean
+  /** Only a type whose remote the gateway can lock. */
+  locked?: boolean
   failure: number
+  /** 0 none, 1 heating, 2 cooling. */
   demand: number
-  ownAmbient: number
-  vautThreshold: number
-  lineRole: number
+  // The CoolPlug's own.
+  serial?: string
+  firmware?: string
+  ownAmbient?: number
+  vautThreshold?: number
+  lineRole?: number
   requests: number
   writes: number
   exceptions: number
   lastRequestAgoMs?: number
+  /** The registers the gateway reads, mostly. */
+  points: HvacPoint[]
 }
 
-export interface CoolPlugStatus {
-  baud: number
-  units: CoolPlugUnit[]
+export type HvacSimSlot = HvacSimIdle | HvacSimUnit
+
+export interface HvacSimStatus {
+  units: HvacSimSlot[]
 }
 
-/** What the remote changes. The setpoint in tenths of a °C, as the register holds it. */
-export interface CoolPlugChange {
+/** What the remote changes, in the type's own codes. The setpoint in tenths of a °C. */
+export interface HvacSimChange {
   power?: boolean
   mode?: number
   setpoint?: number
@@ -1309,10 +1337,10 @@ export interface CoolPlugChange {
   swing?: number
 }
 
-export interface CoolPlugSetReply {
+export interface HvacSimSetReply {
   ok: boolean
   error?: string
-  unit?: CoolPlugUnit
+  unit?: HvacSimSlot
 }
 
 // ── The LED, this template's worked example ──────────────────────────────────

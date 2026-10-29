@@ -8,7 +8,6 @@
 #include "Mutex.h"
 #include "ModbusFrame.h"
 #include "ModbusSplitter.h"
-#include "CoolPlugSimulator.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include <atomic>
@@ -16,12 +15,13 @@
 #include <cstdint>
 
 class SerialPort;
+class HvacSimulator;
 
 /// Who put a frame on the RS485 bus.
 enum class BusSender : uint8_t
 {
-    Bus,         // someone else: the gateway, a real CoolPlug
-    Sim,         // one of the simulated CoolPlugs, answering
+    Bus,         // someone else: the gateway, a real HVAC unit
+    Sim,         // one of the simulated HVAC units, answering
     Testbench,   // put on the bus by hand (`rs485 send`)
 };
 
@@ -49,11 +49,12 @@ struct BusFrame
 
 // ──────────────────────────────────────────────────────────────
 // The RS485 bus: Modbus RTU on the board's RS485 port, a record of everything on it,
-// and the simulated CoolPlugs that answer there.
+// and the simulated HVAC units that answer there.
 //
 // The testbench is a slave on this bus, never its master: a gateway asks, and a
-// simulated CoolPlug at the address asked answers -- or a real one does, and this side
-// only listens. So it reads every frame, not just its own, and keeps the last 256 in a
+// simulated unit at the address asked answers -- or a real one does, and this side
+// only listens. Which units are simulated, and as what, is HvacSimManager's: this asks
+// it for the one on Modbus RTU at an address. So it reads every frame, not just its own, and keeps the last 256 in a
 // ring for the web UI's RS485 page (`rs485 frames`), the way the OpenTherm frames are
 // kept.
 //
@@ -66,9 +67,8 @@ struct BusFrame
 // transmits (echo suppression, set with the port's RS485 mode). So a request sent by
 // hand to a simulated unit is dispatched here, not off the bus.
 //
-// One task owns the port: it reads, answers, sends what `rs485 send` queued once the
-// bus is quiet, and keeps the simulators' time. The simulators' own locks are for the
-// command handlers.
+// One task owns the port: it reads, answers, and sends what `rs485 send` queued once the
+// bus is quiet.
 // ──────────────────────────────────────────────────────────────
 class Rs485Manager
 {
@@ -115,8 +115,6 @@ private:
     Task task_;
     SerialPort* port_ = nullptr;
 
-    CoolPlugSimulator units_[CoolPlugSimulator::UNITS];
-
     // ── The task's alone ──
     ModbusSplitter splitter_;
     uint32_t lastRxMs_ = 0;
@@ -151,8 +149,7 @@ private:
     void OnNoise(const uint8_t* held, size_t heldLen, size_t total);
     void Await(bool active, uint8_t unit = 0, uint32_t nowMs = 0);
     void Dispatch(const uint8_t* adu, size_t len, uint32_t nowMs);
-    CoolPlugSimulator* UnitAt(uint8_t address, uint32_t nowMs);
-    void Answer(CoolPlugSimulator& unit, const uint8_t* adu, size_t len, uint32_t nowMs);
+    void Answer(HvacSimulator& unit, const uint8_t* adu, size_t len, uint32_t nowMs);
     bool Transmit(const uint8_t* adu, size_t len, BusSender from, BusFrameKind kind);
     void SendQueued(uint32_t nowMs);
     void Record(BusSender from, BusFrameKind kind, const uint8_t* bytes, size_t len, size_t total);
@@ -164,14 +161,7 @@ private:
     CommandResult Cmd_Status(CommandContext& ctx);
     CommandResult Cmd_Frames(CommandContext& ctx);
     CommandResult Cmd_Send(CommandContext& ctx);
-    CommandResult Cmd_CoolPlugStatus(CommandContext& ctx);
-    CommandResult Cmd_CoolPlugSet(CommandContext& ctx);
-    CommandResult Cmd_CoolPlugFilter(CommandContext& ctx);
-    CommandResult ApplyToUnit(CommandContext& ctx, uint32_t unit, const CoolPlugSimulator::Change& change);
     static CommandEntry statusCommand_;
     static CommandEntry framesCommand_;
     static CommandEntry sendCommand_;
-    static CommandEntry coolPlugStatusCommand_;
-    static CommandEntry coolPlugSetCommand_;
-    static CommandEntry coolPlugFilterCommand_;
 };
