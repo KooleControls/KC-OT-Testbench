@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { bytesToHex, crc16, decodeFrame, formatRegister, hexToBytes, withCrc } from "./modbus"
+import { bytesToHex, crc16, decodeFrame, formatPoint, hexToBytes, registerName, tableOf, withCrc } from "./modbus"
+import { hvacType } from "./hvac"
+
+const COOLPLUG = hvacType(8)!.registers
+const HISENSE = hvacType(9)!.registers
 
 describe("crc16", () => {
   it("matches the Modbus spec's example", () => {
@@ -23,50 +27,46 @@ describe("hexToBytes", () => {
   })
 })
 
-describe("formatRegister", () => {
-  it("reads the gateway's registers as a CoolPlug means them", () => {
-    expect(formatRegister(97, 225)).toBe("22.5 °C")
-    expect(formatRegister(150, 0xfff6)).toBe("-1.0 °C")
-    expect(formatRegister(144, 1)).toBe("On")
-    expect(formatRegister(145, 1)).toBe("Heat")
-    expect(formatRegister(146, 5)).toBe("Very low")
-    expect(formatRegister(147, 1)).toBe("30°")
-    expect(formatRegister(153, 2)).toBe("Cooling")
-    expect(formatRegister(32, 19)).toBe("0.1.9")
+describe("tables", () => {
+  it("knows which table a function reaches", () => {
+    expect(tableOf(0x01)).toBe("coils")
+    expect(tableOf(0x05)).toBe("coils")
+    expect(tableOf(0x02)).toBe("discrete")
+    expect(tableOf(0x06)).toBe("holding")
+    expect(tableOf(0x04)).toBe("input")
+    expect(tableOf(0x2b)).toBeUndefined()
   })
 
-  it("spells out the line state: bit 0 is a healthy unit, not a fault", () => {
-    expect(formatRegister(95, 0x01)).toBe("indoor connected")
-    expect(formatRegister(95, 0x05)).toBe("indoor connected, failure")
-    expect(formatRegister(95, 0x00)).toBe("indoor NOT connected")
-  })
-
-  it("takes the compact status apart", () => {
-    const v = 1 | (1 << 1) | (2 << 6) | (1 << 10) | (1 << 14)
-    expect(formatRegister(96, v)).toBe("On, Heat, fan High, louvres 30°, therm on")
-  })
-
-  it("shows registers it does not know as numbers", () => {
-    expect(formatRegister(500, 7)).toBe("7")
+  it("names a point from a map, and without one by its table", () => {
+    expect(registerName(COOLPLUG, "holding", 145)).toBe("Mode")
+    expect(registerName(undefined, "input", 7)).toBe("IR 7")
+    expect(formatPoint(undefined, "holding", 145, 2)).toBe("2")
   })
 })
 
 describe("decodeFrame", () => {
   it("reads a read request and, with it, its reply", () => {
-    const request = decodeFrame(withCrc([0x03, 0x03, 0x00, 0x91, 0x00, 0x01]), "request", 8)
+    const request = decodeFrame(withCrc([0x03, 0x03, 0x00, 0x91, 0x00, 0x01]), "request", 8, undefined, COOLPLUG)
     expect(request.unit).toBe(3)
     expect(request.functionName).toBe("Read holding registers")
     expect(request.registerText).toBe("145 Mode")
     expect(request.crcOk).toBe(true)
     expect(request.read).toEqual({ start: 145, count: 1 })
 
-    const reply = decodeFrame(withCrc([0x03, 0x03, 0x02, 0x00, 0x01]), "reply", 7, request.read)
+    const reply = decodeFrame(withCrc([0x03, 0x03, 0x02, 0x00, 0x01]), "reply", 7, request.read, COOLPLUG)
     expect(reply.registerText).toBe("145 Mode")
     expect(reply.valueText).toBe("Heat")
   })
 
+  it("reads a frame without a map as plain numbers", () => {
+    const request = decodeFrame(withCrc([0x03, 0x03, 0x00, 0x91, 0x00, 0x01]), "request", 8)
+    expect(request.registerText).toBe("145")
+    const reply = decodeFrame(withCrc([0x03, 0x03, 0x02, 0x00, 0x01]), "reply", 7, request.read)
+    expect(reply.valueText).toBe("1")
+  })
+
   it("reads a reply on its own as plain numbers", () => {
-    expect(decodeFrame(withCrc([0x03, 0x03, 0x02, 0x00, 0xe6]), "reply", 7).valueText).toBe("230")
+    expect(decodeFrame(withCrc([0x03, 0x03, 0x02, 0x00, 0xe6]), "reply", 7, undefined, COOLPLUG).valueText).toBe("230")
   })
 
   it("reads a range", () => {
@@ -75,13 +75,14 @@ describe("decodeFrame", () => {
       "reply",
       9,
       { start: 144, count: 2 },
+      COOLPLUG,
     )
     expect(reply.registerText).toBe("144-145")
     expect(reply.valueText).toBe("On/off: On | Mode: Cool")
   })
 
   it("reads writes", () => {
-    const w6 = decodeFrame(withCrc([0x01, 0x06, 0x00, 0x61, 0x00, 0xd7]), "request", 8)
+    const w6 = decodeFrame(withCrc([0x01, 0x06, 0x00, 0x61, 0x00, 0xd7]), "request", 8, undefined, COOLPLUG)
     expect(w6.registerText).toBe("97 Setpoint")
     expect(w6.valueText).toBe("21.5 °C")
 
@@ -89,9 +90,45 @@ describe("decodeFrame", () => {
       withCrc([0x01, 0x10, 0x00, 0x90, 0x00, 0x02, 0x04, 0x00, 0x01, 0x00, 0x01]),
       "request",
       13,
+      undefined,
+      COOLPLUG,
     )
     expect(w16.registerText).toBe("144-145")
     expect(w16.valueText).toBe("On/off: On | Mode: Heat")
+  })
+
+  it("reads a Hisense: discrete inputs, input registers and a coil", () => {
+    const di = decodeFrame(withCrc([0x02, 0x02, 0x00, 0x00, 0x00, 0x01]), "request", 8, undefined, HISENSE)
+    expect(di.functionName).toBe("Read discrete inputs")
+    expect(di.registerText).toBe("0 On/off")
+    expect(decodeFrame(withCrc([0x02, 0x02, 0x01, 0x01]), "reply", 6, di.read, HISENSE).valueText).toBe("On")
+
+    const ir = decodeFrame(withCrc([0x02, 0x04, 0x00, 0x07, 0x00, 0x01]), "request", 8, undefined, HISENSE)
+    expect(ir.registerText).toBe("7 Mode")
+    expect(decodeFrame(withCrc([0x02, 0x04, 0x02, 0x00, 0x05]), "reply", 7, ir.read, HISENSE).valueText).toBe(
+      "Auto (cooling)",
+    )
+
+    const coil = decodeFrame(withCrc([0x02, 0x05, 0x00, 0x00, 0xff, 0x00]), "request", 8, undefined, HISENSE)
+    expect(coil.registerText).toBe("0 On/off")
+    expect(coil.valueText).toBe("On")
+    expect(decodeFrame(withCrc([0x02, 0x05, 0x00, 0x00, 0x00, 0x00]), "request", 8, undefined, HISENSE).valueText).toBe("Off")
+
+    // The same address in another table is another point: HR 2 is the mode written.
+    const hr = decodeFrame(withCrc([0x02, 0x06, 0x00, 0x02, 0x00, 0x04]), "request", 8, undefined, HISENSE)
+    expect(hr.registerText).toBe("2 Mode")
+    expect(hr.valueText).toBe("Auto")
+  })
+
+  it("reads bits for as many points as were asked", () => {
+    const reply = decodeFrame(withCrc([0x02, 0x01, 0x01, 0x05]), "reply", 6, { start: 0, count: 3 })
+    expect(reply.valueText).toBe("Coil 0: 1 | Coil 1: 0 | Coil 2: 1")
+  })
+
+  it("reads a write of several coils", () => {
+    const w15 = decodeFrame(withCrc([0x02, 0x0f, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01]), "request", 10, undefined, HISENSE)
+    expect(w15.registerText).toBe("0 On/off")
+    expect(w15.valueText).toBe("On")
   })
 
   it("reads an exception", () => {

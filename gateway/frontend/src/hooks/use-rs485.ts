@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { backend, type BusFrame, type BusStatus, type CoolPlugUnit } from "@/lib/backend"
+import { backend, type BusFrame, type BusStatus, type HvacSimSlot } from "@/lib/backend"
 import { decodeFrame, hexToBytes, type DecodedFrame, type ReadRequest } from "@/lib/modbus"
 import { errorMessage } from "@/hooks/use-led"
 
@@ -17,8 +17,11 @@ const PAGE = 32
 
 export interface BusRow extends BusFrame {
   bytes: number[]
-  /** Absent for noise. */
+  /** Absent for noise. Read without register names: those are the device's, which the
+   *  page knows (decodeFrame again with its map, and `request`). */
   decoded?: DecodedFrame
+  /** For a reply to a read: the read it answers. */
+  request?: ReadRequest
   /** For a reply: how long after the request it answers, by the testbench's clock. */
   replyMs?: number
   /** When the frame was on the bus, in browser time (Date.now()); estimated as in
@@ -66,7 +69,7 @@ export function useBusFrames() {
     const request = asked.current.get(bytes[0] ?? 0)
     asked.current.delete(bytes[0] ?? 0)
     const decoded = decodeFrame(bytes, "reply", f.len, request?.read)
-    return { ...f, bytes, decoded, replyMs: request ? f.ms - request.ms : undefined, receivedAt }
+    return { ...f, bytes, decoded, request: request?.read, replyMs: request ? f.ms - request.ms : undefined, receivedAt }
   }, [])
 
   const poll = useCallback(async () => {
@@ -133,13 +136,13 @@ export function useBusFrames() {
   return { rows, missed, status, error, clear }
 }
 
-/// The simulated CoolPlugs, polled every `intervalMs`; null until the first answer.
-export function useCoolPlugs(intervalMs: number) {
-  const [units, setUnits] = useState<CoolPlugUnit[] | null>(null)
+/// The simulated HVAC units, polled every `intervalMs`; null until the first answer.
+export function useHvacSims(intervalMs: number) {
+  const [units, setUnits] = useState<HvacSimSlot[] | null>(null)
 
   const refresh = useCallback(() => {
     backend
-      .getCoolPlugs()
+      .getHvacSims()
       .then((r) => setUnits(r.units))
       .catch(() => {
         /* shown as unknown until it answers */
@@ -169,7 +172,7 @@ export interface UnitSummary {
   lastAnsweredAt?: number
   /** The last reply time, testbench clock. */
   lastReplyMs?: number
-  /** Whether the replies came from a simulated CoolPlug. */
+  /** Whether the replies came from a simulated unit. */
   simulatedReplies: boolean
 }
 
