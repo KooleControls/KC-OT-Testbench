@@ -10,6 +10,7 @@
 #include "ModuleFirmwareManager/ModuleFirmwareManager.h"
 #include "ModuleLinkManager/ModuleLinkManager.h"
 #include "RoutingManager/RoutingManager.h"
+#include "HvacSimManager/HvacSimManager.h"
 #include "Rs485Manager/Rs485Manager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
@@ -58,7 +59,10 @@ public:
         // the two share the module's UART under ModuleFirmwareManager's lock.
         moduleLinkManager_.Init();
 
-        // The RS485 bus and the CoolPlugs simulated on it. Nothing else uses the port.
+        // The simulated HVAC units, before the bus they answer on asks for them.
+        hvacSimManager_.Init();
+
+        // The RS485 bus, where the units on Modbus RTU answer. Nothing else uses the port.
         rs485Manager_.Init();
     }
 
@@ -68,6 +72,7 @@ public:
     ModuleFirmwareManager& getModuleFirmwareManager() override { return moduleFirmwareManager_; }
     ModuleLinkManager& getModuleLinkManager() override { return moduleLinkManager_; }
     RoutingManager& getRoutingManager() override { return routingManager_; }
+    HvacSimManager& getHvacSimManager() override { return hvacSimManager_; }
     Rs485Manager& getRs485Manager() override { return rs485Manager_; }
 
 private:
@@ -78,5 +83,6 @@ private:
     ModuleFirmwareManager moduleFirmwareManager_{*this};
     ModuleLinkManager moduleLinkManager_{*this};
     RoutingManager routingManager_{*this};
+    HvacSimManager hvacSimManager_{*this};
     Rs485Manager rs485Manager_{*this};
 };
