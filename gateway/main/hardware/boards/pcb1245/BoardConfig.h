@@ -26,12 +26,12 @@ namespace BoardConfig
     static constexpr uint8_t UART_XBEE    = 0;   // 57600, CTS flow control
     static constexpr uint8_t UART_SERVICE = 1;   // FTDI, 115200
     static constexpr uint8_t UART_PCB1246 = 2;   // the OpenTherm plug-in board, 57600
-    static constexpr uint8_t UART_RS485   = 3;   // 115200, RS485 transceiver control
+    static constexpr uint8_t UART_RS485   = 3;   // RS485 transceiver control; Modbus RTU
 
     static constexpr uint32_t XBEE_BAUD    = 57600;
     static constexpr uint32_t SERVICE_BAUD = 115200;
     static constexpr uint32_t PCB1246_BAUD = 57600;
-    static constexpr uint32_t RS485_BAUD   = 115200;
+    static constexpr uint32_t RS485_BAUD   = 9600;     // a CoolPlug's default; the rs485.baud setting after boot
 
     // MAX14830 GPIOs (0-15). Polarity as the KC1245 drives them.
     static constexpr uint8_t PIN_XBEE_RESET  = 0;    // out, active low

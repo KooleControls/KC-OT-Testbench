@@ -208,9 +208,12 @@ bool Max14830::ConfigurePort(uint8_t port, uint32_t baud, bool cts, bool rs485)
                rs485 ? MAX310X_MODE1_TRNSCVCTRL_BIT : 0);
     PortWrite(port, MAX310X_HDPIXDELAY_REG, rs485 ? 0x11 : 0);
 
-    // Reset both FIFOs, keeping RX-not-empty as the RX interrupt.
+    // Reset both FIFOs, keeping RX-not-empty as the RX interrupt. RS485 is half duplex:
+    // the receiver also ignores the line while this side sends, so a transceiver that
+    // hears itself cannot hand this side's own frames back as someone else's.
     PortWrite(port, MAX310X_MODE2_REG, MAX310X_MODE2_RXEMPTINV_BIT | MAX310X_MODE2_FIFORST_BIT);
-    PortWrite(port, MAX310X_MODE2_REG, MAX310X_MODE2_RXEMPTINV_BIT);
+    PortWrite(port, MAX310X_MODE2_REG,
+              MAX310X_MODE2_RXEMPTINV_BIT | (rs485 ? MAX310X_MODE2_ECHOSUPR_BIT : 0));
 
     PortRead(port, MAX310X_IRQSTS_REG);
     PortRead(port, MAX310X_LSR_IRQSTS_REG);

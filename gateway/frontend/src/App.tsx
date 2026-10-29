@@ -7,6 +7,7 @@ import CommandsPage from "@/pages/CommandsPage"
 import SettingsPage from "@/pages/SettingsPage"
 import FirmwarePage from "@/pages/FirmwarePage"
 import OpenThermPage from "@/pages/OpenThermPage"
+import Rs485Page from "@/pages/Rs485Page"
 import ConnectionsPage from "@/pages/ConnectionsPage"
 import SimulatorsPage from "@/pages/SimulatorsPage"
 import LoginPage from "@/pages/LoginPage"
@@ -15,6 +16,8 @@ function PageContent({ page }: { page: Page }) {
   switch (page) {
     case "home":
       return <OpenThermPage />
+    case "rs485":
+      return <Rs485Page />
     case "connections":
       return <ConnectionsPage />
     case "simulators":

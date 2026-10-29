@@ -150,6 +150,12 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* A native <select> lists its options on the select's own background, which is
+     see-through here, so Chrome draws them on white while they keep the theme's
+     light text. Give them the popover's colours instead. */
+  option {
+    @apply bg-popover text-popover-foreground;
+  }
   html {
     @apply font-sans;
     }

@@ -10,6 +10,7 @@
 #include "ModuleFirmwareManager/ModuleFirmwareManager.h"
 #include "ModuleLinkManager/ModuleLinkManager.h"
 #include "RoutingManager/RoutingManager.h"
+#include "Rs485Manager/Rs485Manager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
 //
@@ -56,6 +57,9 @@ public:
         // The link to the module's firmware. Waits out the check above on its own:
         // the two share the module's UART under ModuleFirmwareManager's lock.
         moduleLinkManager_.Init();
+
+        // The RS485 bus and the CoolPlugs simulated on it. Nothing else uses the port.
+        rs485Manager_.Init();
     }
 
     StruxProvider& getStrux() override { return strux_; }
@@ -64,6 +68,7 @@ public:
     ModuleFirmwareManager& getModuleFirmwareManager() override { return moduleFirmwareManager_; }
     ModuleLinkManager& getModuleLinkManager() override { return moduleLinkManager_; }
     RoutingManager& getRoutingManager() override { return routingManager_; }
+    Rs485Manager& getRs485Manager() override { return rs485Manager_; }
 
 private:
     BoardContext& board_;
@@ -73,4 +78,5 @@ private:
     ModuleFirmwareManager moduleFirmwareManager_{*this};
     ModuleLinkManager moduleLinkManager_{*this};
     RoutingManager routingManager_{*this};
+    Rs485Manager rs485Manager_{*this};
 };
