@@ -3,7 +3,7 @@ name: Release
 # One build, both boards, in dependency order:
 #
 #   opentherm/  (Arm GNU)   ->  opentherm.bin
-#   gateway/    (ESP-IDF)   ->  the app image, with opentherm.bin linked INTO it
+#   the root    (ESP-IDF)   ->  the app image, with opentherm.bin linked INTO it
 #
 # The gateway's ModuleFirmwareManager flashes the PCB1246 from that embedded copy
 # whenever the module runs anything else, so one OTA of the gateway app updates both
@@ -63,26 +63,25 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          package_json_file: gateway/frontend/package.json
+          package_json_file: frontend/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: gateway/frontend/pnpm-lock.yaml
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       # The ESP-IDF container has no pnpm, so the frontend is built here, into
-      # gateway/www/, and the firmware build packs what it finds there.
+      # www/, and the firmware build packs what it finds there.
       - name: Build frontend
-        run: cd gateway/frontend && pnpm install --frozen-lockfile && pnpm build
+        run: cd frontend && pnpm install --frozen-lockfile && pnpm build
 
       - name: Build gateway firmware (ESP-IDF)
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: ${{ env.IDF_VERSION }}
           target: ${{ env.TARGET }}
-          path: gateway
           command: |
             set -euo pipefail
             # The container runs as root over a checkout owned by the runner, so git
@@ -102,7 +101,7 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
           tag="${tag%-rc.*}"   # an RC builds as the version it is a candidate for
-          gateway=$(python3 -c "import json; print(json.load(open('gateway/build/project_description.json'))['project_version'])")
+          gateway=$(python3 -c "import json; print(json.load(open('build/project_description.json'))['project_version'])")
           module=$(python3 -c "d=open('opentherm/build/opentherm.bin','rb').read(); print(d[0x30C:0x320].split(b'\0')[0].decode())")
           echo "tag $tag, gateway $gateway, PCB1246 $module"
           [ "$gateway" = "$tag" ] || { echo "::error::gateway reports '$gateway', tag is '$tag'"; exit 1; }
@@ -113,8 +112,8 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           name="KC-OT-Testbench"
-          cp gateway/build/merged-factory.bin  "dist/$name-gateway-factory.bin"
-          cp gateway/build/KC-OT-Testbench.bin "dist/$name-gateway-app.bin"
+          cp build/merged-factory.bin          "dist/$name-gateway-factory.bin"
+          cp build/KC-OT-Testbench.bin         "dist/$name-gateway-app.bin"
           cp opentherm/build/opentherm.bin     "dist/$name-pcb1246.bin"
           cp opentherm/build/opentherm.hex     "dist/$name-pcb1246.hex"
           (cd dist && sha256sum *) | tee dist/SHA256SUMS
