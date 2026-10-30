@@ -2,10 +2,10 @@
 
 Test bench for OpenTherm on the KC1245 gateway and the PCB1246 OpenTherm plug-in board, built on the Strux framework. The goal is a rig that simulates both ends of the OpenTherm bus, a thermostat and a boiler, so OpenTherm devices and the gateway can be tested without real equipment. Work in progress. Lives at [KooleControls/KC-OT-Testbench](https://github.com/KooleControls/KC-OT-Testbench).
 
-- `gateway/`: ESP32 firmware for the KC1245 gateway. A copy of [Strux](https://github.com/vanBassum/Strux) at commit `3c2e4ca`.
+- The repo root: ESP32 firmware for the KC1245 gateway, an ESP-IDF project (`main/`, `frontend/`). A copy of [Strux](https://github.com/vanBassum/Strux) at commit `3c2e4ca`; its README is [STRUX.md](STRUX.md).
 - `opentherm/`: LPC11U68 firmware for the PCB1246 (bare metal, no RTOS, Strux-style). Laid out like the gateway: the board, the Strux command/settings/system managers, and the OpenTherm modem with its link to the gateway.
 
-Each folder holds its full source; nothing is shared between the two.
+Each holds its full source; nothing is shared between the two. Open the repo root as a folder in VS Code: being the ESP-IDF project, it gets the ESP-IDF extension's build, flash and monitor buttons.
 
 Decided so far:
 - The LPC runs bare metal: one main loop, interrupts only set flags and fill buffers. No RTOS.
@@ -20,10 +20,9 @@ Decided so far:
 
 ## Build
 
-Gateway, board `pcb1245`, with ESP-IDF 6.0:
+Gateway, board `pcb1245` (the default), with ESP-IDF 6.0, from the repo root:
 
 ```sh
-cd gateway
 idf.py -DBOARD=pcb1245 set-target esp32
 idf.py -DBOARD=pcb1245 build
 ```
@@ -38,7 +37,7 @@ cmake --build build
 
 Output in `opentherm/build/`: `opentherm.elf`, `.hex`, `.bin` and `.map`, with the LPC boot checksum and the image info already patched in.
 
-Build `opentherm/` before `gateway/`: the gateway build embeds `opentherm/build/opentherm.bin` when it exists, and warns and leaves the module alone when it does not (`-DPCB1246_FIRMWARE=<path>` points it elsewhere).
+Build `opentherm/` before the gateway: the gateway build embeds `opentherm/build/opentherm.bin` when it exists, and warns and leaves the module alone when it does not (`-DPCB1246_FIRMWARE=<path>` points it elsewhere).
 
 ## Release
 

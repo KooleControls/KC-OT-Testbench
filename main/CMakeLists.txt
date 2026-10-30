@@ -182,7 +182,7 @@ set(FRONTEND_STAMP "${CMAKE_CURRENT_BINARY_DIR}/frontend.stamp")
 # ── The PCB1246 firmware ──────────────────────────────────────
 # The OpenTherm module's .bin rides inside this app image, so one OTA updates both
 # boards: ModuleFirmwareManager flashes the module with it over ISP whenever the module
-# runs anything else. Built first, by the opentherm/ project next to this one.
+# runs anything else. Built first, by the opentherm/ project inside this one.
 #
 # Copied to a fixed name so the linker symbols are fixed too
 # (_binary_pcb1246_bin_start). configure_file makes the copy a configure dependency,
@@ -192,7 +192,7 @@ set(FRONTEND_STAMP "${CMAKE_CURRENT_BINARY_DIR}/frontend.stamp")
 # it is -- and an error when PCB1246_FIRMWARE_REQUIRED is set, which the release
 # workflow does: a release that silently stopped carrying the module's firmware would
 # look fine until a board needed it.
-set(PCB1246_FIRMWARE "${CMAKE_CURRENT_LIST_DIR}/../../opentherm/build/opentherm.bin"
+set(PCB1246_FIRMWARE "${CMAKE_CURRENT_LIST_DIR}/../opentherm/build/opentherm.bin"
     CACHE FILEPATH "The PCB1246 firmware image to embed")
 option(PCB1246_FIRMWARE_REQUIRED "Fail the build when the PCB1246 image is missing" OFF)
 
