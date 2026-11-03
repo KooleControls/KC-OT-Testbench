@@ -36,6 +36,11 @@
 // Every frame is recorded once, with where it came from and where it went
 // (ModuleLinkManager::RecordFrame): frames from a line by the link, the simulators'
 // frames here.
+//
+// On the way through, it keeps what each thermostat last asked for in its status
+// (id 0): CH enable, cooling enable. Whatever stands for a heat or cool request on
+// the bench -- a relay (IoManager) -- reads it from here, routed or not: a thermostat
+// left open still asks.
 // ──────────────────────────────────────────────────────────────
 class RoutingManager
 {
@@ -66,11 +71,21 @@ public:
 
     Slave PartnerOf(Master master) const { return routes_[Index(master)].load(); }
 
+    /// Whether `master` asks for `flag` (opentherm::MASTER_CH_ENABLE,
+    /// MASTER_COOLING_ENABLE) in the last status it sent. False once it has sent none
+    /// for STATUS_FRESH_MS: a thermostat that went quiet asks for nothing. Any task.
+    bool Requests(Master master, uint8_t flag, uint32_t nowMs) const;
+
 private:
     static constexpr size_t QUEUE_LEN = 8;
     static constexpr int TASK_STACK = 4096;
     static constexpr size_t MASTER_COUNT = 2;
     static constexpr uint32_t IDLE_WAIT_MS = 20;
+
+    // A thermostat asks for its status every second or two (the simulator every other
+    // frame); ten seconds without one is a cable pulled or a simulator stopped. Our
+    // choice, not OpenTherm's.
+    static constexpr uint32_t STATUS_FRESH_MS = 10000;
 
     /// A frame on its way, with the destination decided when it came in.
     struct Delivery
@@ -84,6 +99,16 @@ private:
     Task task_;
 
     std::atomic<Slave> routes_[MASTER_COUNT] = { Slave::BoilerLine, Slave::Open };
+
+    /// The master status flags (id 0, high byte) a thermostat sent last, and when.
+    /// Written by whichever task saw the frame -- the link's or this one's.
+    struct MasterStatus
+    {
+        std::atomic<bool> heard{ false };
+        std::atomic<uint8_t> flags{ 0 };
+        std::atomic<uint32_t> ms{ 0 };
+    };
+    MasterStatus status_[MASTER_COUNT];
 
     ThermostatSimulator thermostatSim_;
     BoilerSimulator boilerSim_;
@@ -107,6 +132,7 @@ private:
     Endpoint Destination(Endpoint from) const;
     void Deliver(const Delivery& d);
     void Emit(Endpoint from, uint32_t frame);
+    void Observe(Endpoint from, uint32_t frame);
     void Load();
     void Store();
 

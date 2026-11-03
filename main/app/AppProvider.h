@@ -18,6 +18,7 @@ class ModuleLinkManager;
 class RoutingManager;
 class HvacSimManager;
 class Rs485Manager;
+class IoManager;
 
 class AppProvider
 {
@@ -35,4 +36,5 @@ public:
     virtual RoutingManager& getRoutingManager() = 0;
     virtual HvacSimManager& getHvacSimManager() = 0;
     virtual Rs485Manager& getRs485Manager() = 0;
+    virtual IoManager& getIoManager() = 0;
 };

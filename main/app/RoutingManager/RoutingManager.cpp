@@ -3,6 +3,7 @@
 #include "SettingsManager.h"
 #include "CommandManager.h"
 #include "ModuleLinkManager.h"
+#include "OpenThermFrame.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <cstring>
@@ -214,6 +215,9 @@ Endpoint RoutingManager::Destination(Endpoint from) const
 
 Endpoint RoutingManager::OnLineFrame(Endpoint from, uint32_t frame)
 {
+    // Before the route: a thermostat connected to nothing still says what it wants.
+    Observe(from, frame);
+
     if (queue_ == nullptr)
         return Endpoint::None;
 
@@ -280,10 +284,40 @@ void RoutingManager::Deliver(const Delivery& d)
 
 void RoutingManager::Emit(Endpoint from, uint32_t frame)
 {
+    Observe(from, frame);
     const Endpoint to = Destination(from);
     app_.getModuleLinkManager().RecordFrame(from, to, frame);
     if (to != Endpoint::None)
         Deliver(Delivery{ to, frame });
+}
+
+// ── What the thermostats ask for ─────────────────────────────
+
+void RoutingManager::Observe(Endpoint from, uint32_t frame)
+{
+    // A thermostat says what it wants in the status it asks for: a read of id 0, its
+    // flags in the high byte.
+    if (opentherm::TypeOf(frame) != opentherm::MsgType::ReadData || opentherm::DataIdOf(frame) != 0)
+        return;
+
+    Master master;
+    if (from == Endpoint::Thermostat)         master = Master::ThermostatLine;
+    else if (from == Endpoint::ThermostatSim) master = Master::ThermostatSim;
+    else return;
+
+    MasterStatus& s = status_[Index(master)];
+    s.flags = opentherm::HighByte(opentherm::ValueOf(frame));
+    s.ms = NowMs();
+    s.heard = true;
+}
+
+bool RoutingManager::Requests(Master master, uint8_t flag, uint32_t nowMs) const
+{
+    // Signed: a status that came in after the caller read its clock is newer than
+    // `nowMs`, not 49 days old.
+    const MasterStatus& s = status_[Index(master)];
+    const int32_t age = static_cast<int32_t>(nowMs - s.ms.load());
+    return s.heard.load() && age < static_cast<int32_t>(STATUS_FRESH_MS) && (s.flags.load() & flag) != 0;
 }
 
 // ── Commands ─────────────────────────────────────────────────

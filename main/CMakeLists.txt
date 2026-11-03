@@ -54,6 +54,7 @@ set(APP_SOURCES
     "app/Simulators/Hvac/SamsungProfile.cpp"
     "app/HvacSimManager/HvacSimManager.cpp"
     "app/Rs485Manager/Rs485Manager.cpp"
+    "app/IoManager/IoManager.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -96,6 +97,7 @@ set(INCLUDE_DIRS_LIST
     "app/Simulators/Hvac"
     "app/HvacSimManager"
     "app/Rs485Manager"
+    "app/IoManager"
 )
 
 set(COMPONENT_REQUIRES
