@@ -12,6 +12,7 @@
 #include "RoutingManager/RoutingManager.h"
 #include "HvacSimManager/HvacSimManager.h"
 #include "Rs485Manager/Rs485Manager.h"
+#include "IoManager/IoManager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
 //
@@ -64,6 +65,9 @@ public:
 
         // The RS485 bus, where the units on Modbus RTU answer. Nothing else uses the port.
         rs485Manager_.Init();
+
+        // The relays and inputs. After the router, whose thermostats a relay can follow.
+        ioManager_.Init();
     }
 
     StruxProvider& getStrux() override { return strux_; }
@@ -74,6 +78,7 @@ public:
     RoutingManager& getRoutingManager() override { return routingManager_; }
     HvacSimManager& getHvacSimManager() override { return hvacSimManager_; }
     Rs485Manager& getRs485Manager() override { return rs485Manager_; }
+    IoManager& getIoManager() override { return ioManager_; }
 
 private:
     BoardContext& board_;
@@ -85,4 +90,5 @@ private:
     RoutingManager routingManager_{*this};
     HvacSimManager hvacSimManager_{*this};
     Rs485Manager rs485Manager_{*this};
+    IoManager ioManager_{*this};
 };

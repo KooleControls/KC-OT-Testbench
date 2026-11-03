@@ -811,6 +811,28 @@ class BackendService {
     return this.send<HvacSimSetReply>("hvac filter", { unit, on })
   }
 
+  // ── The relays and inputs ──────────────────────────────────────
+
+  /** Both relays, both inputs, and whether each source asks for its relay now. */
+  async getIo(): Promise<IoState> {
+    return this.send<IoState>("io status")
+  }
+
+  /** Close or open a relay by hand; refused for one that follows a thermostat. */
+  async setIoRelay(relay: number, on: boolean): Promise<IoState> {
+    return this.send<IoState>("io relay", { relay, on })
+  }
+
+  /** Let a relay follow a source. The device saves it. */
+  async setIoSource(relay: number, source: IoSource): Promise<IoState> {
+    return this.send<IoState>("io source", { relay, source })
+  }
+
+  /** The changes on the four lines after `after` (a seq), oldest first. */
+  async getIoEvents(after: number): Promise<IoEventsReply> {
+    return this.send<IoEventsReply>("io events", { after })
+  }
+
   /** Turns the link indication on or off. Omitted fields are left alone by the
    *  device, so `{}` is a no-op that still reports the current state. */
   async setLed(params: { enabled?: boolean }): Promise<LedState> {
@@ -1164,18 +1186,21 @@ export interface SimStatus {
     responses: number
     unanswered: number
     unknownIds: number
+    overridesFollowed?: number
     lastResponseAgoMs?: number
     boiler: {
       fault?: boolean
       ch?: boolean
       dhw?: boolean
       flame?: boolean
+      cooling?: boolean
       waterTemp?: number
       modulation?: number
       memberId?: number
       dhwPresent?: boolean
       modulating?: boolean
       otVersion?: number
+      override?: number
     }
   }
   boilerSim: {
@@ -1341,6 +1366,45 @@ export interface HvacSimSetReply {
   ok: boolean
   error?: string
   unit?: HvacSimSlot
+}
+
+// ── The relays and inputs ────────────────────────────────────────────────────
+
+/** What a relay follows: "manual" (`io relay`), or a thermostat's heat or cool request
+ *  as it asks for it in its OpenTherm status (CH enable, cooling enable). */
+export type IoSource = "manual" | "thermostat.heat" | "thermostat.cool" | "thermostatSim.heat" | "thermostatSim.cool"
+
+/** `io status`, `io relay`, `io source`. A refused change has only `ok` and `error`. */
+export interface IoState {
+  ok: boolean
+  error?: string
+  relays: { relay: number; on: boolean; source: IoSource }[]
+  /** `changedAgoMs` is absent until the input changed after the testbench booted. */
+  inputs: { input: number; active: boolean; changedAgoMs?: number }[]
+  /** Whether each source but manual asks for its relay right now. */
+  sources: Record<Exclude<IoSource, "manual">, boolean>
+  /** The newest event's seq. */
+  latest: number
+}
+
+export type IoLine = "input1" | "input2" | "relay1" | "relay2"
+
+/** One change on one line: an input becoming active or not, a relay closing or opening. */
+export interface IoEvent {
+  seq: number
+  /** The testbench's clock (ms since boot) when the line changed; an input's from
+   *  before the debounce. */
+  ms: number
+  line: IoLine
+  on: boolean
+}
+
+export interface IoEventsReply {
+  latest: number
+  missed: number
+  /** The testbench's clock when it answered. */
+  ms: number
+  events: IoEvent[]
 }
 
 // ── The LED, this template's worked example ──────────────────────────────────

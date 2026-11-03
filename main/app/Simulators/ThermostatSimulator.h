@@ -12,10 +12,13 @@ class ReplyObject;
 // A thermostat that is not a device: an OpenTherm master running on the testbench.
 //
 // It asks one question per interval, going round a fixed cycle -- its status (with
-// CH and DHW enable), the flow temperature it wants, its room temperature and
+// CH, DHW and cooling enable), the flow temperature it wants, its room temperature and
 // setpoint, and reads of what the boiler has to say -- and remembers what the boiler
 // answered. Every request is built from the settings as they are at that moment, so
-// a change applies with the next frame.
+// a change applies with the next frame. A remote override from the boiler side (id 9)
+// moves the setpoint, as on a real thermostat, unless tsim.follow is off. With
+// tsim.auto it asks for heat or cooling as the room needs it, from room temperature
+// and setpoint, instead of whenever CH or cooling enable is set.
 //
 // Driven entirely by the RoutingManager's task: it says when a request is due, takes
 // the request and hands back the answer. The lock is only for Report(), which runs
@@ -54,17 +57,22 @@ private:
     {
         uint32_t requests = 0, responses = 0, unanswered = 0, unknownIds = 0;
         uint32_t lastResponseMs = 0;
+        uint32_t overridesFollowed = 0;
         uint8_t known = 0;
         uint8_t slaveFlags = 0;
-        float waterTemp = 0, modulation = 0, otVersion = 0;
+        float waterTemp = 0, modulation = 0, otVersion = 0, remoteOverride = 0;
         uint8_t slaveConfig = 0, memberId = 0;
     } heard_;
+
+    // The last id 9 value, raw, so the next reads of one pulse are not taken again.
+    uint16_t lastOverride_ = 0;
 
     static constexpr uint8_t KNOWN_STATUS = 1 << 0;
     static constexpr uint8_t KNOWN_WATER = 1 << 1;
     static constexpr uint8_t KNOWN_MODULATION = 1 << 2;
     static constexpr uint8_t KNOWN_CONFIG = 1 << 3;
     static constexpr uint8_t KNOWN_VERSION = 1 << 4;
+    static constexpr uint8_t KNOWN_OVERRIDE = 1 << 5;
 
     // ── Settings (keys at most 15 characters) ──
     inline static FloatSetting roomTemp_{ "tsim.room", "Thermostat Sim Room Temperature", 19.8f };
@@ -72,6 +80,9 @@ private:
     inline static FloatSetting flowTemp_{ "tsim.flow", "Thermostat Sim Requested Flow Temperature", 35.0f };
     inline static BoolSetting chEnable_{ "tsim.ch", "Thermostat Sim CH Enable", true };
     inline static BoolSetting dhwEnable_{ "tsim.dhw", "Thermostat Sim DHW Enable", false };
+    inline static BoolSetting coolEnable_{ "tsim.cool", "Thermostat Sim Cooling Enable", false };
+    inline static BoolSetting autoDemand_{ "tsim.auto", "Thermostat Sim Asks As The Room Needs", false };
+    inline static BoolSetting followOverride_{ "tsim.follow", "Thermostat Sim Follows Remote Override", true };
     inline static UInt32Setting interval_{ "tsim.interval", "Thermostat Sim Interval (ms)", 1000 };
     inline static UInt32Setting memberId_{ "tsim.member", "Thermostat Sim Member Id", 0 };
 };

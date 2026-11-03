@@ -98,6 +98,9 @@ const THERMOSTAT_FIELDS: Field[] = [
   { key: "tsim.interval", label: "Interval between frames", kind: "number", unit: "ms", step: 100, keywords: "polling timing" },
   { key: "tsim.ch", label: "CH enable", kind: "toggle", description: "Ask for central heating", ids: [0], keywords: "status" },
   { key: "tsim.dhw", label: "DHW enable", kind: "toggle", description: "Ask for hot water", ids: [0], keywords: "status" },
+  { key: "tsim.cool", label: "Cooling enable", kind: "toggle", description: "Ask for cooling", ids: [0], keywords: "status" },
+  { key: "tsim.auto", label: "Ask as the room needs", kind: "toggle", description: "Ask for heat below the setpoint and cooling above it, as CH and cooling enable allow", ids: [0], keywords: "status demand thermostat" },
+  { key: "tsim.follow", label: "Follow remote override", kind: "toggle", description: "Take the boiler side's setpoint override as the room setpoint", ids: [9], keywords: "setpoint TrOverride" },
   { key: "tsim.member", label: "Member id", kind: "number", unit: "", step: 1, ids: [2], keywords: "master config device" },
 ]
 
@@ -843,9 +846,10 @@ function Ago({ ms }: { ms?: number }) {
   return <span>{(ms / 1000).toFixed(1)} s ago</span>
 }
 
-function mode(ch?: boolean, dhw?: boolean): string {
-  if (ch === undefined && dhw === undefined) return "—"
+function mode(ch?: boolean, dhw?: boolean, cooling?: boolean): string {
+  if (ch === undefined && dhw === undefined && cooling === undefined) return "—"
   if (dhw) return "Hot water"
+  if (cooling) return "Cooling"
   if (ch) return "Heating"
   return "Idle"
 }
@@ -857,11 +861,17 @@ function memberId(value: SettingEntry["value"] | number | undefined): ReactNode 
 function thermostatLiveRows(status?: SimStatus["thermostatSim"]): RowDef[] {
   const b = status?.boiler ?? {}
   return [
-    { label: "Mode", ids: [0], keywords: "status heating hot water dhw ch", value: mode(b.ch, b.dhw) },
+    { label: "Mode", ids: [0], keywords: "status heating cooling hot water dhw ch", value: mode(b.ch, b.dhw, b.cooling) },
     { label: "Flame", ids: [0], keywords: "status burner", value: <OnOff on={b.flame} /> },
     { label: "Water temperature", ids: [25], value: <Num value={b.waterTemp} unit="°C" /> },
     { label: "Modulation level", ids: [17], value: <Num value={b.modulation} unit="%" digits={0} /> },
     { label: "Fault", ids: [0, 5], keywords: "status error", value: <OnOff on={b.fault} /> },
+    {
+      label: "Remote override",
+      ids: [9],
+      keywords: "setpoint TrOverride",
+      value: b.override === 0 ? "None" : <Num value={b.override} unit="°C" />,
+    },
     { label: "Last answer", keywords: "response", value: <Ago ms={status?.lastResponseAgoMs} /> },
     {
       label: "Answered",

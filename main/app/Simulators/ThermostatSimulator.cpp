@@ -9,15 +9,18 @@ using namespace opentherm;
 namespace {
 
 // One question per interval, round and round. Status every other frame, because it
-// carries CH and DHW enable and a real thermostat keeps it that close.
-constexpr uint8_t CYCLE[] = { 0, 1, 0, 25, 0, 17, 0, 24, 0, 16, 0, 3, 0, 125, 0, 124, 0, 2 };
+// carries CH, DHW and cooling enable and a real thermostat keeps it that close. The
+// remote override (9) three times a round: the KC module answers an override for three
+// reads of it and 0 after, so it must not wait a whole round between two reads.
+constexpr uint8_t CYCLE[] = { 0, 1, 0, 9, 0, 25, 0, 17, 0, 24, 0, 9, 0, 16, 0, 3, 0, 125, 0, 9, 0, 124, 0, 2 };
 constexpr size_t CYCLE_LEN = sizeof(CYCLE) / sizeof(CYCLE[0]);
 
 } // namespace
 
 void ThermostatSimulator::RegisterSettings(SettingsManager& settings)
 {
-    settings.Register({ &roomTemp_, &setpoint_, &flowTemp_, &chEnable_, &dhwEnable_, &interval_, &memberId_ });
+    settings.Register({ &roomTemp_, &setpoint_, &flowTemp_, &chEnable_, &dhwEnable_, &coolEnable_, &autoDemand_,
+                        &followOverride_, &interval_, &memberId_ });
 }
 
 bool ThermostatSimulator::Due(uint32_t nowMs)
@@ -36,7 +39,19 @@ uint32_t ThermostatSimulator::NextRequest(uint32_t nowMs)
     switch (id)
     {
     case 0: {
-        const uint8_t flags = (chEnable_.Get() ? MASTER_CH_ENABLE : 0) | (dhwEnable_.Get() ? MASTER_DHW_ENABLE : 0);
+        // With tsim.auto, CH and cooling enable say which the thermostat may ask for,
+        // and it asks as the room needs it: heat below the setpoint, cooling above.
+        bool ch = chEnable_.Get();
+        bool cool = coolEnable_.Get();
+        if (autoDemand_.Get())
+        {
+            const float room = roomTemp_.Get();
+            const float setpoint = setpoint_.Get();
+            ch = ch && room < setpoint;
+            cool = cool && room > setpoint;
+        }
+        const uint8_t flags = (ch ? MASTER_CH_ENABLE : 0) | (dhwEnable_.Get() ? MASTER_DHW_ENABLE : 0)
+                            | (cool ? MASTER_COOLING_ENABLE : 0);
         frame = Make(MsgType::ReadData, id, Bytes(flags, 0));
         break;
     }
@@ -45,7 +60,7 @@ uint32_t ThermostatSimulator::NextRequest(uint32_t nowMs)
     case 16:  frame = Make(MsgType::WriteData, id, FromF88(setpoint_.Get())); break;
     case 24:  frame = Make(MsgType::WriteData, id, FromF88(roomTemp_.Get())); break;
     case 124: frame = Make(MsgType::WriteData, id, FromF88(PROTOCOL_VERSION)); break;
-    default:  frame = Make(MsgType::ReadData, id, 0); break;   // 3, 17, 25, 125
+    default:  frame = Make(MsgType::ReadData, id, 0); break;   // 3, 9, 17, 25, 125
     }
 
     LOCK(mutex_);
@@ -86,6 +101,20 @@ void ThermostatSimulator::OnResponse(uint32_t frame, uint32_t nowMs)
         heard_.memberId = LowByte(value);
         heard_.known |= KNOWN_CONFIG;
         break;
+    case 9:
+        // A remote override: the boiler side wants the room at this setpoint, 0 for
+        // none. The KC module sends one as a pulse, the value for three reads and then
+        // 0, so it is taken once per pulse, as the KC thermostat does: a hand turning
+        // the setpoint afterwards keeps what it set until the next override.
+        heard_.remoteOverride = ToF88(value);
+        heard_.known |= KNOWN_OVERRIDE;
+        if (value != lastOverride_ && value != 0 && followOverride_.Get())
+        {
+            setpoint_.Set(heard_.remoteOverride);
+            heard_.overridesFollowed++;
+        }
+        lastOverride_ = value;
+        break;
     case 17:
         heard_.modulation = ToF88(value);
         heard_.known |= KNOWN_MODULATION;
@@ -110,6 +139,7 @@ void ThermostatSimulator::Report(ReplyObject& out, uint32_t nowMs)
     out.field("responses", heard_.responses);
     out.field("unanswered", heard_.unanswered);
     out.field("unknownIds", heard_.unknownIds);
+    out.field("overridesFollowed", heard_.overridesFollowed);
     if (heard_.responses > 0)
         out.field("lastResponseAgoMs", nowMs - heard_.lastResponseMs);
 
@@ -120,6 +150,7 @@ void ThermostatSimulator::Report(ReplyObject& out, uint32_t nowMs)
         boiler.field("ch", (heard_.slaveFlags & SLAVE_CH_MODE) != 0);
         boiler.field("dhw", (heard_.slaveFlags & SLAVE_DHW_MODE) != 0);
         boiler.field("flame", (heard_.slaveFlags & SLAVE_FLAME) != 0);
+        boiler.field("cooling", (heard_.slaveFlags & SLAVE_COOLING) != 0);
     }
     if (heard_.known & KNOWN_WATER)
         boiler.field("waterTemp", heard_.waterTemp);
@@ -133,4 +164,6 @@ void ThermostatSimulator::Report(ReplyObject& out, uint32_t nowMs)
     }
     if (heard_.known & KNOWN_VERSION)
         boiler.field("otVersion", heard_.otVersion);
+    if (heard_.known & KNOWN_OVERRIDE)
+        boiler.field("override", heard_.remoteOverride);
 }

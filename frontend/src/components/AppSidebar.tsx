@@ -8,6 +8,7 @@ import {
   SquareTerminalIcon,
   SettingsIcon,
   DownloadIcon,
+  ToggleRightIcon,
 } from "lucide-react"
 import {
   Sidebar,
@@ -47,6 +48,7 @@ const navItems = [
   { title: "RS485", icon: NetworkIcon, page: "rs485" as const },
   { title: "Connections", icon: CableIcon, page: "connections" as const },
   { title: "Simulators", icon: CpuIcon, page: "simulators" as const },
+  { title: "Relays & inputs", icon: ToggleRightIcon, page: "io" as const },
   {
     title: "Console",
     hint: "Device logs (stdout)",

@@ -10,6 +10,7 @@ import OpenThermPage from "@/pages/OpenThermPage"
 import Rs485Page from "@/pages/Rs485Page"
 import ConnectionsPage from "@/pages/ConnectionsPage"
 import SimulatorsPage from "@/pages/SimulatorsPage"
+import IoPage from "@/pages/IoPage"
 import LoginPage from "@/pages/LoginPage"
 
 function PageContent({ page }: { page: Page }) {
@@ -22,6 +23,8 @@ function PageContent({ page }: { page: Page }) {
       return <ConnectionsPage />
     case "simulators":
       return <SimulatorsPage />
+    case "io":
+      return <IoPage />
     case "console":
       return <ConsolePage />
     case "commands":
