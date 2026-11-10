@@ -28,3 +28,27 @@ CONFIG_SPIRAM=y
 # project root, and the file sits beside this one so a board is one folder.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="main/hardware/boards/pcb1245/partitions.csv"
+
+# ── BLE controller ─────────────────────────────────────────────
+# The ESP32's controller does Classic and BLE; the application needs BLE only, and
+# hands the Classic half's RAM back at runtime (BleThermostatManager::Init). One
+# connection, as a thermostat has.
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+CONFIG_BTDM_CTRL_BLE_MAX_CONN=1
+
+# NimBLE's heap in the PSRAM above: internal RAM is the scarce resource on this board.
+# A choice that depends on the PSRAM, which is what makes it the board's.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+
+# ── IRAM budget ────────────────────────────────────────────────
+# The BLE controller does not fit the ESP32's 128 KB of IRAM beside everything else;
+# the KC1245 firmware, on this same board, overflowed by 21 KB. WiFi keeps its TX and
+# RX paths in IRAM, the largest block that can move to flash; the cost is WiFi
+# throughput, and this board's link is its Ethernet. The SPI ISRs stay in IRAM, for
+# the Ethernet MAC and the MAX14830 while flash is being written.
+#
+# Written as "is not set" rather than "=n": a generated sdkconfig records an n that
+# way, and the drift guard in the root CMakeLists only checks CONFIG_X=... lines, so
+# "=n" would be reported as drift on a tree configured exactly as asked.
+# CONFIG_ESP_WIFI_IRAM_OPT is not set
+# CONFIG_ESP_WIFI_RX_IRAM_OPT is not set

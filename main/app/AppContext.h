@@ -13,6 +13,7 @@
 #include "HvacSimManager/HvacSimManager.h"
 #include "Rs485Manager/Rs485Manager.h"
 #include "IoManager/IoManager.h"
+#include "BleThermostat/BleThermostatManager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
 //
@@ -68,6 +69,10 @@ public:
 
         // The relays and inputs. After the router, whose thermostats a relay can follow.
         ioManager_.Init();
+
+        // The KC thermostat's BLE link to a gateway. After the router: its panel is in
+        // front of the thermostat simulator. Starts nothing until ble.enable is set.
+        bleThermostatManager_.Init();
     }
 
     StruxProvider& getStrux() override { return strux_; }
@@ -79,6 +84,7 @@ public:
     HvacSimManager& getHvacSimManager() override { return hvacSimManager_; }
     Rs485Manager& getRs485Manager() override { return rs485Manager_; }
     IoManager& getIoManager() override { return ioManager_; }
+    BleThermostatManager& getBleThermostatManager() override { return bleThermostatManager_; }
 
 private:
     BoardContext& board_;
@@ -91,4 +97,5 @@ private:
     HvacSimManager hvacSimManager_{*this};
     Rs485Manager rs485Manager_{*this};
     IoManager ioManager_{*this};
+    BleThermostatManager bleThermostatManager_{*this};
 };

@@ -19,6 +19,7 @@ class RoutingManager;
 class HvacSimManager;
 class Rs485Manager;
 class IoManager;
+class BleThermostatManager;
 
 class AppProvider
 {
@@ -37,4 +38,5 @@ public:
     virtual HvacSimManager& getHvacSimManager() = 0;
     virtual Rs485Manager& getRs485Manager() = 0;
     virtual IoManager& getIoManager() = 0;
+    virtual BleThermostatManager& getBleThermostatManager() = 0;
 };
