@@ -76,6 +76,11 @@ public:
     /// for STATUS_FRESH_MS: a thermostat that went quiet asks for nothing. Any task.
     bool Requests(Master master, uint8_t flag, uint32_t nowMs) const;
 
+    /// The thermostat simulator, for the BLE thermostat in front of it: its panel reads
+    /// the room and setpoint from it and hands it the mode in force. Only its locked
+    /// members (SetModeGate, ReadPanel, SetSetpoint) are for another task.
+    ThermostatSimulator& ThermostatSim() { return thermostatSim_; }
+
 private:
     static constexpr size_t QUEUE_LEN = 8;
     static constexpr int TASK_STACK = 4096;

@@ -55,6 +55,8 @@ set(APP_SOURCES
     "app/HvacSimManager/HvacSimManager.cpp"
     "app/Rs485Manager/Rs485Manager.cpp"
     "app/IoManager/IoManager.cpp"
+    "app/BleThermostat/BleThermostatManager.cpp"
+    "app/BleThermostat/ThermostatPanel.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -98,6 +100,7 @@ set(INCLUDE_DIRS_LIST
     "app/HvacSimManager"
     "app/Rs485Manager"
     "app/IoManager"
+    "app/BleThermostat"
 )
 
 set(COMPONENT_REQUIRES
@@ -125,6 +128,9 @@ set(COMPONENT_REQUIRES
     # the certificate bundle a wss:// pipe verifies against.
     tcp_transport
     esp-tls
+    # NimBLE, for the simulated KC thermostat's BLE link to a gateway
+    # (BleThermostatManager). Configured in sdkconfig.defaults and the board's overlay.
+    bt
 )
 
 # ── Board selection ────────────────────────────────────────────

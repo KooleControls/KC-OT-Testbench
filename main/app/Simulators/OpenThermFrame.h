@@ -37,6 +37,7 @@ constexpr uint8_t SLAVE_COOLING = 1 << 4;
 // Slave configuration (id 3, high byte).
 constexpr uint8_t SLAVE_DHW_PRESENT = 1 << 0;
 constexpr uint8_t SLAVE_ON_OFF_CONTROL = 1 << 1;   // clear: modulating
+constexpr uint8_t SLAVE_COOLING_SUPPORTED = 1 << 2;
 // Reserved in 2.2. Honeywell/Airios read it as "the boiler decides heating or cooling",
 // told to the thermostat in the CH mode and cooling bits of its id 0 answer; this is
 // how the KC plug-in board (PCB1246, 2020 firmware) forces a mode.

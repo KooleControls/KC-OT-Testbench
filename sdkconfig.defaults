@@ -77,3 +77,27 @@ CONFIG_PM_DFS_INIT_AUTO=y
 # nothing for the relay's outbound socket, mDNS, SNTP or DHCP. A fork that adds a
 # second listener should read this before trusting the default again.
 CONFIG_LWIP_MAX_SOCKETS=16
+
+# ── BLE (NimBLE): the simulated KC thermostat's link to a gateway ──
+# The application plays a KC thermostat (BleThermostatManager), and a thermostat is
+# the CENTRAL: the gateway advertises, the thermostat scans, connects and pairs.
+# Peripheral and broadcaster stay at their defaults, as on the thermostat: the GAP
+# service that carries its name is a GATT-server service. The pairing needs the
+# security manager with LE Secure Connections, which NimBLE has on by default.
+#
+# Only what holds on any chip with BLE is here. The controller's mode, NimBLE's heap
+# in PSRAM and the IRAM all this costs are the board's; see its overlay.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+
+# One peer, ever: a thermostat pairs with exactly one gateway.
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+
+# Bonds survive a reboot, so a reconnect never needs the install code again.
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+
+# One session chunk is one GATT write, so the MTU is the chunk size. The thermostat
+# and the gateway both ask for 247.
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
