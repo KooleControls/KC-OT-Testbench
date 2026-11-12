@@ -14,9 +14,10 @@
 // time and reads their settings.
 //
 // It does not touch a bus. Each transport asks it which unit a request is for: the
-// RS485 bus (Rs485Manager) for the types on Modbus RTU, and a Modbus TCP server, when
-// there is one, for the CoolMasterNets. So a type is added here, in its profile, and
-// not in a transport.
+// RS485 bus (Rs485Manager) by unit id for the types on Modbus RTU, and the Modbus TCP
+// server (ModbusTcpManager) by the registers asked for, for the CoolMasterNets' indoor
+// units, which share one slave. So a type is added here, in its profile, and not in a
+// transport.
 // ──────────────────────────────────────────────────────────────
 class HvacSimManager
 {
@@ -34,7 +35,12 @@ public:
 
     /// The unit a request to `unit` over `transport` is for, or nullptr when none here
     /// plays that address. Two at one address is a test setup mistake; the first has it.
-    HvacSimulator* Find(HvacTransport transport, uint8_t unit);
+    HvacSimulator* Find(HvacTransport transport, uint16_t unit);
+
+    /// The unit whose block of registers holds `start` to `start + count - 1` over
+    /// `transport`, or nullptr when none here owns them all. Two blocks that overlap are
+    /// a test setup mistake; the first has it.
+    HvacSimulator* FindByRegisters(HvacTransport transport, uint16_t start, uint16_t count);
 
     /// A broadcast over `transport`: every unit that is up and answering carries it out.
     /// None replies.

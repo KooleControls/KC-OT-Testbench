@@ -52,8 +52,10 @@ set(APP_SOURCES
     "app/Simulators/Hvac/DaikinProfile.cpp"
     "app/Simulators/Hvac/MitsubishiProfile.cpp"
     "app/Simulators/Hvac/SamsungProfile.cpp"
+    "app/Simulators/Hvac/CoolMasterNetProfile.cpp"
     "app/HvacSimManager/HvacSimManager.cpp"
     "app/Rs485Manager/Rs485Manager.cpp"
+    "app/ModbusTcpManager/ModbusTcpManager.cpp"
     "app/IoManager/IoManager.cpp"
     "app/BleThermostat/BleThermostatManager.cpp"
     "app/BleThermostat/ThermostatPanel.cpp"
@@ -99,6 +101,7 @@ set(INCLUDE_DIRS_LIST
     "app/Simulators/Hvac"
     "app/HvacSimManager"
     "app/Rs485Manager"
+    "app/ModbusTcpManager"
     "app/IoManager"
     "app/BleThermostat"
 )
@@ -106,6 +109,8 @@ set(INCLUDE_DIRS_LIST
 set(COMPONENT_REQUIRES
     esp_timer
     esp_netif
+    # The Modbus TCP server (ModbusTcpManager) is on BSD sockets.
+    lwip
     esp_event
     esp_wifi
     nvs_flash

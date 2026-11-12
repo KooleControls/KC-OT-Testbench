@@ -44,7 +44,7 @@ enum class HvacTransport : uint8_t
 {
     None,        // not over Modbus at all
     ModbusRtu,   // the RS485 bus (Rs485Manager)
-    ModbusTcp,   // the network. Nothing serves it yet.
+    ModbusTcp,   // the network: one slave for several units (ModbusTcpManager)
 };
 
 /// The four Modbus tables. Which function codes reach which is the protocol's.
@@ -78,9 +78,19 @@ struct HvacState
         int16_t ownAmbient = 0;       // °C x10, what a controller feeds it
     } coolPlug;
 
+    // What only a CoolMasterNet keeps per indoor unit: its lock word, its set
+    // temperature limits and two spare registers, as its registers hold them.
+    struct
+    {
+        uint16_t lockBits = 0;
+        uint16_t limits = 0;
+        uint16_t spare[2] = { 0, 0 };
+    } coolMaster;
+
     // ── The simulation: the settings, and what follows from them ──
     uint8_t index = 0;        // which simulator, 0-based
-    uint8_t address = 0;      // its Modbus address
+    uint16_t address = 0;     // its Modbus address: the unit id on RTU, the first
+                              // register of its block on a slave shared by several
     int16_t room = 0;         // °C x10, as it is right now
     uint16_t failure = 0;     // 0: none
     bool indoor = true;       // the interface still reaches its indoor unit
@@ -125,6 +135,11 @@ public:
         return mode < traits.modes.size() ? traits.modes[mode] : ModeKind::None;
     }
 
+    /// How many registers in a row a unit of this type owns on a slave it shares with
+    /// others (a CoolMasterNet's indoor units), from its address on: its registers are
+    /// then read relative to that address. 0 for a type that is a slave of its own.
+    virtual uint16_t Span() const { return 0; }
+
     /// How the indoor unit starts: at boot, and when a simulator takes this type.
     virtual void Reset(HvacState& s) const = 0;
 
@@ -168,6 +183,7 @@ const HvacTypeInfo* FindHvacType(uint32_t number);
 
 // The profiles, one file each.
 const HvacProfile& CoolPlugProfile();
+const HvacProfile& CoolMasterNetProfile();
 const HvacProfile& HisenseProfile();
 const HvacProfile& DaikinProfile();
 const HvacProfile& MitsubishiProfile();

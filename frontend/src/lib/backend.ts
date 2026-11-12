@@ -1286,7 +1286,7 @@ export interface BusStatus {
 }
 
 /** `hvac status`, a unit without a type the testbench plays: unused (0), or one it
- *  does not simulate (OpenTherm, relay, CoolMasterNet). */
+ *  does not simulate (OpenTherm, relay). */
 export interface HvacSimIdle {
   /** 1-10: which simulator, as in the gateway's HVAC list; not its Modbus address. */
   unit: number
@@ -1309,7 +1309,8 @@ export interface HvacSimUnit {
   unit: number
   type: number
   simulated: true
-  /** Its Modbus address; 0 when the setting holds one no master can use. */
+  /** Its Modbus address: the unit id on RTU, the first register of its block on a
+   *  CoolMasterNet; 0 when the setting holds one no master can use. */
   address: number
   /** On the bus (hvacN.answer): answering requests at all. */
   answers: boolean
