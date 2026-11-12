@@ -131,10 +131,18 @@ void HvacSimManager::TaskLoop()
 
 // ── For the transports ───────────────────────────────────────
 
-HvacSimulator* HvacSimManager::Find(HvacTransport transport, uint8_t unit)
+HvacSimulator* HvacSimManager::Find(HvacTransport transport, uint16_t unit)
 {
     for (HvacSimulator& u : units_)
         if (u.Serves(transport, unit))
+            return &u;
+    return nullptr;
+}
+
+HvacSimulator* HvacSimManager::FindByRegisters(HvacTransport transport, uint16_t start, uint16_t count)
+{
+    for (HvacSimulator& u : units_)
+        if (u.Owns(transport, start, count))
             return &u;
     return nullptr;
 }

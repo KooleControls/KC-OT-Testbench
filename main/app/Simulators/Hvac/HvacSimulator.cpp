@@ -135,8 +135,12 @@ void HvacSimulator::ReadSettings()
     Config c;
     c.type = settings_->type.Get();
     const uint32_t address = settings_->address.Get();
-    // An address no master can use takes it off the bus rather than wrapping round.
-    c.address = (address >= 1 && address <= MAX_ADDRESS) ? static_cast<uint8_t>(address) : 0;
+    // An address no master can use takes it off the bus rather than wrapping round: a
+    // unit id on RTU; on a shared slave the first register of a block that still fits.
+    const HvacTypeInfo* info = FindHvacType(c.type);
+    const uint16_t span = info != nullptr && info->profile != nullptr ? info->profile->Span() : 0;
+    const uint32_t maxAddress = span == 0 ? MAX_ADDRESS : 0x10000u - span;
+    c.address = (address >= 1 && address <= maxAddress) ? static_cast<uint16_t>(address) : 0;
     c.answers = settings_->answers.Get();
     c.room = settings_->room.Get();
     c.failure = static_cast<uint16_t>(settings_->failure.Get());
@@ -235,12 +239,24 @@ HvacDemand HvacSimulator::CurrentDemand() const
 
 // ── The bus ──────────────────────────────────────────────────
 
-bool HvacSimulator::Serves(HvacTransport transport, uint8_t unit)
+bool HvacSimulator::Serves(HvacTransport transport, uint16_t unit)
 {
     LOCK(mutex_);
     if (Profile() == nullptr || type_->transport != transport || config_.address == 0 || restarting_)
         return false;
     return unit == BROADCAST || unit == config_.address;
+}
+
+bool HvacSimulator::Owns(HvacTransport transport, uint16_t start, uint16_t count)
+{
+    LOCK(mutex_);
+    const HvacProfile* profile = Profile();
+    if (profile == nullptr || type_->transport != transport || config_.address == 0 || restarting_)
+        return false;
+    const uint32_t span = profile->Span();
+    if (span == 0)
+        return false;
+    return start >= config_.address && static_cast<uint32_t>(start) + count <= config_.address + span;
 }
 
 bool HvacSimulator::Answers()
@@ -560,16 +576,19 @@ void HvacSimulator::Report(ReplyObject& out, uint32_t nowMs)
     if (counters_.requests > 0)
         out.field("lastRequestAgoMs", nowMs - counters_.lastRequestMs);
 
-    // The registers worth showing, as the bus would answer them right now.
+    // The registers worth showing, as the bus would answer them right now. A type with
+    // a block lists them by offset; on the wire they start at the unit's address.
+    const uint16_t base = profile->Span() != 0 ? config_.address : 0;
     auto points = out.array("points");
     for (const HvacProfile::Point& p : profile->points)
     {
+        const uint16_t address = static_cast<uint16_t>(p.address + base);
         uint16_t value = 0;
-        if (!profile->Read(state_, p.table, p.address, value))
+        if (!profile->Read(state_, p.table, address, value))
             continue;
         auto o = points.object();
         o.field("t", TableCode(p.table));
-        o.field("a", static_cast<uint32_t>(p.address));
+        o.field("a", static_cast<uint32_t>(address));
         o.field("v", static_cast<uint32_t>(value));
     }
 }

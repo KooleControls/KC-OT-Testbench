@@ -31,7 +31,8 @@ class ReplyObject;
 // from one place (RoomTenths), for a real source to take over later.
 //
 // It does not know which bus it is on. Whoever serves a transport asks every unit
-// whether a request is its (Serves), and the type says which transport reaches it.
+// whether a request is its -- by unit id on RTU (Serves), by the registers asked for on
+// a slave several units share (Owns) -- and the type says which transport reaches it.
 //
 // Driven by HvacSimManager's task (Refresh, Tick); the lock is for whichever task serves
 // a request or a command.
@@ -59,7 +60,12 @@ public:
     /// Whether a request to `unit` over `transport` is this one's: a type that is
     /// simulated and reached that way, at that address, and not restarting. Broadcasts
     /// (0) are for every unit that is up.
-    bool Serves(HvacTransport transport, uint8_t unit);
+    bool Serves(HvacTransport transport, uint16_t unit);
+
+    /// Whether registers `start` to `start + count - 1` over `transport` are this one's:
+    /// a type with a block of its own on a shared slave (HvacProfile::Span), all of them
+    /// in its block, and not restarting.
+    bool Owns(HvacTransport transport, uint16_t start, uint16_t count);
 
     /// The faults a test can ask for: not answering at all, or answering late.
     bool Answers();
@@ -98,7 +104,7 @@ private:
     {
         uint32_t type = 0;   // the gateway's number
         bool indoor = true, answers = true;
-        uint8_t address = 0;
+        uint16_t address = 0;
         uint16_t failure = 0;
         uint32_t delayMs = 0;
         float room = 0;

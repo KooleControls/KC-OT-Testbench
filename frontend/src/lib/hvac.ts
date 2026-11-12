@@ -112,6 +112,38 @@ const FOUR_SWINGS = { 0: "Off", 1: "Vertical", 2: "Horizontal", 3: "Auto" }
 const DAIKIN_MODES = { 1: "Heat", 2: "Auto", 3: "Cool" }
 const SAMSUNG_SWINGS = { 0: "Off", 1: "Swing" }
 
+// ── The CoolMasterNet: one slave, a block of ten registers per indoor unit ──
+
+const CMN_MODES = { 0: "Cool", 1: "Heat", 2: "Auto", 3: "Dry", 4: "Heat aux", 5: "Fan", 6: "Heat HH" }
+const CMN_FANS = { 0: "Low", 1: "Medium", 2: "High", 3: "Auto", 4: "Top", 5: "Very low" }
+const CMN_SWINGS = { 0: "Vertical", 1: "30°", 2: "45°", 3: "60°", 4: "Horizontal", 5: "Auto", 6: "Off" }
+
+/** The lock word as a CoolMasterNet keeps it: bit 0 on/off (with bit 3), 1 mode, 2 setpoint. */
+function lockWord(v: number): string {
+  if (v === 0) return "Free"
+  const parts = [v & 0x01 && "on/off", v & 0x02 && "mode", v & 0x04 && "setpoint"].filter(Boolean)
+  return `Locked: ${parts.length ? parts.join(", ") : hex(v)}`
+}
+const limits = (v: number) => (v === 0 ? "None" : `${(v & 0xff) / 2} to ${(v >> 8) / 2} °C`)
+
+/** A CoolMasterNet indoor unit's registers by OFFSET from its first register, the
+ *  unit's address in the gateway's HVAC list (HvacCoolAutomation.cpp). */
+const CMN_REGISTERS: Record<number, RegisterInfo> = {
+  0: reg("Mode", named(CMN_MODES)),
+  1: reg("Fan speed", named(CMN_FANS)),
+  2: reg("Setpoint", tenths),
+  3: reg("On/off", onOff),
+  4: reg("Filter sign", yesNo),
+  5: reg("Louvres", named(CMN_SWINGS)),
+  6: reg("Room temperature", tenths),
+  7: reg("Failure code", code),
+  8: reg("Remote control", lockWord),
+  9: reg("Setpoint limits", limits),
+}
+
+const COOLMASTERNET_SOURCE =
+  "Holding registers 0-9 from the unit's address, as the gateway's driver (HvacCoolAutomation.cpp) uses them, checked against a CoolMasterNet v0.9.8C with simulated indoor units (2026-11-12): all indoor units behind one slave answering any unit id, each a slot of 16 registers (ten used, two spare, four reserved). The real one takes any setpoint, refuses codes outside the mode, fan and louvre tables, and keeps only the low four bits of the lock word, so the 0x0080 the gateway writes locks nothing."
+
 // ── The types ────────────────────────────────────────────────────
 
 export interface HvacType {
@@ -122,6 +154,10 @@ export interface HvacType {
   name: string
   /** How the gateway reaches it. */
   via: string
+  /** On a slave several units share (a CoolMasterNet): how many registers in a row a
+   *  unit owns from its address, its first register. The register map is then by
+   *  offset from it. Absent for a unit that is a slave of its own. */
+  block?: number
   /** Whether the testbench plays it, and if not, why not. */
   simulated: boolean
   why?: string
@@ -235,22 +271,40 @@ export const HVAC_TYPES: HvacType[] = [
       "Holding registers 1-5, 10, 121 and 122, as the gateway's driver (HvacDaikin.cpp) uses them; no manual was at hand. It reports no room temperature. Other modes than heat, auto and cool, and the setpoint range (10-35 °C), are guesses.",
   },
   {
-    ...NONE,
     id: 5,
     code: "CMN",
     name: "CoolMasterNet",
     via: "Modbus TCP",
-    simulated: false,
-    why: "Reached over the network, at unit 1 with a block of registers per indoor unit. Not simulated yet: the testbench has no Modbus TCP server.",
+    block: 10,
+    simulated: true,
+    modes: choices(CMN_MODES),
+    fans: choices(CMN_FANS),
+    swings: choices(CMN_SWINGS),
+    setpoint: { min: 10, max: 35, step: 0.1 },
+    room: true,
+    filter: true,
+    lock: true,
+    indoor: false,
+    registers: { holding: CMN_REGISTERS },
+    source: COOLMASTERNET_SOURCE,
   },
   {
-    ...NONE,
     id: 6,
     code: "CMA",
     name: "CoolMasterNet (Aedes)",
     via: "Modbus TCP",
-    simulated: false,
-    why: "As CMN: reached over the network, and not simulated yet.",
+    block: 10,
+    simulated: true,
+    modes: choices(CMN_MODES),
+    fans: choices(CMN_FANS),
+    swings: choices(CMN_SWINGS),
+    setpoint: { min: 10, max: 35, step: 0.1 },
+    room: true,
+    filter: true,
+    lock: true,
+    indoor: false,
+    registers: { holding: CMN_REGISTERS },
+    source: "The same registers as CMN; the gateway runs its Aedes strategy with this type (CHT 6, CCT 6). " + COOLMASTERNET_SOURCE,
   },
   {
     id: 7,

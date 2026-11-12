@@ -28,9 +28,10 @@ describe("the types", () => {
     expect(typeLabel(hvacType(3)!)).toBe("3 - SAM - Samsung via Intesis")
   })
 
-  it("are simulated on Modbus RTU only, for now", () => {
-    expect(HVAC_TYPES.filter((t) => t.simulated).map((t) => t.code)).toEqual(["SAM", "DAI", "MIT", "COP", "HIS"])
-    expect(HVAC_TYPES.filter((t) => t.simulated).every((t) => t.via === "Modbus RTU")).toBe(true)
+  it("are simulated on Modbus RTU and, the CoolMasterNets, on Modbus TCP", () => {
+    expect(HVAC_TYPES.filter((t) => t.simulated).map((t) => t.code)).toEqual(["SAM", "DAI", "CMN", "CMA", "MIT", "COP", "HIS"])
+    expect(HVAC_TYPES.filter((t) => t.via === "Modbus TCP").map((t) => t.block)).toEqual([10, 10])
+    expect(HVAC_TYPES.filter((t) => t.via === "Modbus RTU").every((t) => t.block === undefined)).toBe(true)
   })
 
   it("each name every code their remote offers", () => {

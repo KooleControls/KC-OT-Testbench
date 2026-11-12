@@ -54,8 +54,8 @@ const UI_GROUPS: { id: string; label: string; prefixes: string[] }[] = [
   { id: "network", label: "Network", prefixes: ["wifi", "net"] },
   {
     id: "hvac",
-    label: "RS485 & HVAC simulators",
-    prefixes: ["rs485", ...Array.from({ length: 10 }, (_, i) => `hvac${i + 1}`)],
+    label: "RS485, Modbus TCP & HVAC simulators",
+    prefixes: ["rs485", "mbtcp", ...Array.from({ length: 10 }, (_, i) => `hvac${i + 1}`)],
   },
 ]
 

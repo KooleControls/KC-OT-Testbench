@@ -12,6 +12,7 @@
 #include "RoutingManager/RoutingManager.h"
 #include "HvacSimManager/HvacSimManager.h"
 #include "Rs485Manager/Rs485Manager.h"
+#include "ModbusTcpManager/ModbusTcpManager.h"
 #include "IoManager/IoManager.h"
 #include "BleThermostat/BleThermostatManager.h"
 
@@ -67,6 +68,9 @@ public:
         // The RS485 bus, where the units on Modbus RTU answer. Nothing else uses the port.
         rs485Manager_.Init();
 
+        // The Modbus TCP server, where the CoolMasterNets' indoor units answer.
+        modbusTcpManager_.Init();
+
         // The relays and inputs. After the router, whose thermostats a relay can follow.
         ioManager_.Init();
 
@@ -83,6 +87,7 @@ public:
     RoutingManager& getRoutingManager() override { return routingManager_; }
     HvacSimManager& getHvacSimManager() override { return hvacSimManager_; }
     Rs485Manager& getRs485Manager() override { return rs485Manager_; }
+    ModbusTcpManager& getModbusTcpManager() override { return modbusTcpManager_; }
     IoManager& getIoManager() override { return ioManager_; }
     BleThermostatManager& getBleThermostatManager() override { return bleThermostatManager_; }
 
@@ -96,6 +101,7 @@ private:
     RoutingManager routingManager_{*this};
     HvacSimManager hvacSimManager_{*this};
     Rs485Manager rs485Manager_{*this};
+    ModbusTcpManager modbusTcpManager_{*this};
     IoManager ioManager_{*this};
     BleThermostatManager bleThermostatManager_{*this};
 };

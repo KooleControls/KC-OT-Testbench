@@ -73,7 +73,8 @@ export function HvacSimulators({
         <a href="#/rs485" className="hover:text-foreground underline underline-offset-4">
           RS485 page
         </a>
-        .
+        . The CoolMasterNet units answer on Modbus TCP (port mbtcp.port, 502) as one slave at unit id 1, each a
+        block of ten registers from its address, which is its first register.
       </p>
 
       <div role="tablist" aria-label="Simulated HVAC unit" className="grid grid-cols-5 gap-2 lg:grid-cols-10">
@@ -86,7 +87,7 @@ export function HvacSimulators({
               ? "…"
               : type.id === 0
                 ? "not used"
-                : `${type.code} · ${live ? `address ${values[`hvac${n}.addr`] ?? "?"}` : "not simulated"}`
+                : `${type.code} · ${live ? `${type.block ? "from" : "address"} ${values[`hvac${n}.addr`] ?? "?"}` : "not simulated"}`
           return (
             <button
               key={n}
@@ -172,7 +173,7 @@ function UnitCard({
           <TypeSelect id={key("type")} value={values[key("type")]} onChange={(v) => onSetting(key("type"), v)} />
           <NumberSetting
             id={key("addr")}
-            label="Modbus address"
+            label={type?.block ? "First register" : "Modbus address"}
             unit=""
             step={1}
             value={values[key("addr")]}
@@ -181,6 +182,7 @@ function UnitCard({
           />
           <BusSwitch
             live={live}
+            shared={type?.block !== undefined}
             unit={sim}
             value={values[key("answer")]}
             onChange={(v) => onSetting(key("answer"), v)}
@@ -232,10 +234,9 @@ function TypeSelect({
         onChange={(e) => onChange(e.target.value)}
       >
         {HVAC_TYPES.map((t) => (
-          // OpenTherm and the relay are never on a bus here; a CoolMasterNet will be.
-          <option key={t.id} value={t.id} disabled={!t.simulated && t.id !== 0 && t.via !== "Modbus TCP"}>
+          // OpenTherm and the relay are never on a bus here.
+          <option key={t.id} value={t.id} disabled={!t.simulated && t.id !== 0}>
             {typeLabel(t)}
-            {!t.simulated && t.via === "Modbus TCP" ? " (not yet)" : ""}
           </option>
         ))}
       </select>
@@ -243,14 +244,18 @@ function TypeSelect({
   )
 }
 
-/** The hvacN.answer switch, with what the unit is doing on the bus beside it. */
+/** The hvacN.answer switch, with what the unit is doing on the bus beside it. A unit on
+ *  a slave it shares (a CoolMasterNet's) is not silent when off the bus: its registers
+ *  are refused, as for an indoor unit the CoolMasterNet does not have. */
 function BusSwitch({
   live,
+  shared,
   unit,
   value,
   onChange,
 }: {
   live: boolean
+  shared: boolean
   unit?: HvacSimUnit
   value: SettingEntry["value"] | undefined
   onChange: (on: boolean) => void
@@ -259,7 +264,7 @@ function BusSwitch({
   const [text, color] = !live
     ? ["Not simulated", "text-muted-foreground"]
     : !on
-      ? ["Off the bus: answers nothing", "text-amber-600 dark:text-amber-400"]
+      ? [shared ? "Off the bus: its registers are refused" : "Off the bus: answers nothing", "text-amber-600 dark:text-amber-400"]
       : unit?.restarting
         ? [unit.pendingAddress ? `Restarting, then at ${unit.pendingAddress}` : "Restarting", "text-amber-600 dark:text-amber-400"]
         : unit?.address === 0
@@ -283,19 +288,21 @@ function GatewayView({ type, unit }: { type: HvacType; unit?: HvacSimUnit }) {
       {unit ? (
         unit.points.map((p) => {
           const table = POINT_TABLES[p.t]
+          // A block's map is by offset from the unit's first register.
+          const named = type.block ? p.a - unit.address : p.a
           return (
             <Row
               key={`${p.t}${p.a}`}
               label={
                 <>
-                  {registerName(type.registers, table, p.a)}{" "}
+                  {registerName(type.registers, table, named)}{" "}
                   <span className="text-muted-foreground/70 font-mono text-xs">
                     {TABLE_SHORT[table]} {p.a}
                   </span>
                 </>
               }
             >
-              {formatPoint(type.registers, table, p.a, p.v)}{" "}
+              {formatPoint(type.registers, table, named, p.v)}{" "}
               <span className="text-muted-foreground font-mono text-xs">({p.v})</span>
             </Row>
           )

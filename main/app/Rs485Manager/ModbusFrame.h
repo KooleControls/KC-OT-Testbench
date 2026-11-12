@@ -48,6 +48,7 @@ constexpr uint8_t ILLEGAL_FUNCTION = 0x01;
 constexpr uint8_t ILLEGAL_DATA_ADDRESS = 0x02;
 constexpr uint8_t ILLEGAL_DATA_VALUE = 0x03;
 constexpr uint8_t SLAVE_DEVICE_FAILURE = 0x04;
+constexpr uint8_t GATEWAY_TARGET_FAILED = 0x0B;   // a Modbus TCP device: no such unit behind it
 } // namespace ex
 
 /// Modbus' CRC-16: polynomial 0xA001 (reflected 0x8005), from 0xFFFF.
